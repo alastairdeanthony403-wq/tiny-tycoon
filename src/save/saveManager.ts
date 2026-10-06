@@ -1,0 +1,321 @@
+import type { GameState } from '../core/types';
+import { SAVE_VERSION } from '../core/types';
+import { createInitialState, createShop, defaultSettings, defaultStats } from '../core/state';
+import { ECONOMY } from '../config/economy';
+import { OBJECT_MAP } from '../config/objects';
+import { PRODUCT_MAP } from '../config/products';
+import { LOCATION_MAP } from '../config/locations';
+import { EXPANSIONS } from '../config/expansions';
+import { STAFF_MAP, STAFF_MAX_LEVEL, TRAIT_MAP } from '../config/staff';
+
+/** Minimal storage interface (localStorage in the browser, a Map in tests). */
+export interface KeyValueStore {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
+
+export class MemoryStore implements KeyValueStore {
+  data = new Map<string, string>();
+  getItem(k: string) {
+    return this.data.has(k) ? this.data.get(k)! : null;
+  }
+  setItem(k: string, v: string) {
+    this.data.set(k, v);
+  }
+  removeItem(k: string) {
+    this.data.delete(k);
+  }
+}
+
+export const SAVE_KEY = 'tinytycoon.save';
+export const BACKUP_KEY = 'tinytycoon.save.bak';
+
+interface SaveEnvelope {
+  version: number;
+  savedAt: number;
+  checksum: string;
+  state: unknown;
+}
+
+/** Simple string hash (FNV-1a) — detects accidental corruption and casual tampering. */
+export function checksum(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16);
+}
+
+type Migration = (s: any) => any;
+
+/** Migrations from version N to N+1. Add an entry whenever the save structure changes. */
+export const MIGRATIONS: Record<number, Migration> = {
+  // v1 → v2: "premiumCurrency" became "stars"; settings gained text scale & graphics; per-shop hire counts.
+  1: (s) => {
+    if (s.player && s.player.premiumCurrency !== undefined) {
+      s.player.stars = (s.player.stars ?? 0) + s.player.premiumCurrency;
+      delete s.player.premiumCurrency;
+    }
+    if (s.settings) {
+      s.settings.textScale ??= 1;
+      s.settings.graphics ??= 'high';
+    }
+    for (const shop of Object.values<any>(s.shops ?? {})) shop.hires ??= {};
+    return s;
+  },
+};
+
+export function migrate(raw: any): any {
+  let v = typeof raw?.version === 'number' ? raw.version : 1;
+  let s = raw;
+  while (v < SAVE_VERSION) {
+    const m = MIGRATIONS[v];
+    if (m) s = m(s);
+    v++;
+    s.version = v;
+  }
+  return s;
+}
+
+const num = (v: unknown, def: number, min = 0, max: number = ECONOMY.maxMoney): number => (typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : def);
+const bool = (v: unknown, def: boolean): boolean => (typeof v === 'boolean' ? v : def);
+const str = (v: unknown, def: string): string => (typeof v === 'string' ? v : def);
+const obj = (v: unknown): Record<string, any> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, any>) : {});
+const arr = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+
+/**
+ * Validates and repairs a (migrated) save: every field is type-checked and clamped,
+ * unknown ids are dropped, and anything missing falls back to safe defaults.
+ */
+export function validate(raw: any, now = Date.now()): GameState {
+  const d = createInitialState(now, 1);
+  const r = obj(raw);
+  const p = obj(r.player);
+  const st: GameState = {
+    ...d,
+    version: SAVE_VERSION,
+    player: {
+      money: num(p.money, d.player.money),
+      stars: Math.floor(num(p.stars, 0, 0, 1e9)),
+      xp: num(p.xp, 0),
+      level: Math.floor(num(p.level, 1, 1, 999)),
+      reputation: num(p.reputation, 0),
+      currentLocation: LOCATION_MAP[p.currentLocation] ? p.currentLocation : 'neighborhood',
+      lifetimeRevenue: num(p.lifetimeRevenue, 0),
+      lifetimeCustomers: num(p.lifetimeCustomers, 0),
+      lifetimeProductsSold: num(p.lifetimeProductsSold, 0),
+      runRevenue: num(p.runRevenue, 0),
+      prestigeCount: Math.floor(num(p.prestigeCount, 0, 0, 1e6)),
+      title: typeof p.title === 'string' ? p.title : undefined,
+    },
+  };
+  const prog = obj(r.progression);
+  const unlockedLocations = arr<string>(prog.unlockedLocations).filter((id) => LOCATION_MAP[id]);
+  if (!unlockedLocations.includes('neighborhood')) unlockedLocations.unshift('neighborhood');
+  st.progression = {
+    unlockedProducts: [...new Set(arr<string>(prog.unlockedProducts).filter((id) => PRODUCT_MAP[id]))],
+    unlockedLocations,
+    mainQuestIndex: Math.floor(num(prog.mainQuestIndex, 0, 0, 1000)),
+    activeQuests: arr<any>(prog.activeQuests)
+      .filter((q) => q && typeof q.id === 'string')
+      .map((q) => ({ id: q.id, base: num(q.base, 0), completed: bool(q.completed, false), claimed: bool(q.claimed, false), side: q.side && typeof q.side.stat === 'string' ? { stat: q.side.stat, amount: num(q.side.amount, 1, 1), money: num(q.side.money, 0), xp: num(q.side.xp, 0) } : undefined })),
+    sideQuestCounter: Math.floor(num(prog.sideQuestCounter, 0)),
+    achievements: Object.fromEntries(Object.entries(obj(prog.achievements)).map(([k, v]) => [k, { unlocked: bool(obj(v).unlocked, false), claimed: bool(obj(v).claimed, false) }])),
+    milestones: Object.fromEntries(Object.entries(obj(prog.milestones)).map(([k, v]) => [k, !!v])),
+    flags: Object.fromEntries(Object.entries(obj(prog.flags)).map(([k, v]) => [k, !!v])),
+    tutorialDone: bool(prog.tutorialDone, false),
+    seenUnlocks: arr<string>(prog.seenUnlocks).filter((x) => typeof x === 'string'),
+  };
+  if (!st.progression.unlockedProducts.includes('crisps')) st.progression.unlockedProducts.unshift('crisps');
+
+  st.shops = {};
+  const shops = obj(r.shops);
+  for (const id of unlockedLocations) st.shops[id] = validateShop(shops[id], id);
+  if (!st.shops[st.player.currentLocation]) st.player.currentLocation = 'neighborhood';
+
+  st.globalUpgrades = Object.fromEntries(Object.entries(obj(r.globalUpgrades)).map(([k, v]) => [k, Math.floor(num(v, 0, 0, 100))]));
+  st.perks = Object.fromEntries(Object.entries(obj(r.perks)).map(([k, v]) => [k, Math.floor(num(v, 0, 0, 100))]));
+  const cos = obj(r.cosmetics);
+  const themes = arr<string>(cos.unlockedThemes).filter((t) => typeof t === 'string');
+  if (!themes.includes('classic')) themes.unshift('classic');
+  st.cosmetics = { theme: str(cos.theme, 'classic'), unlockedThemes: themes };
+  const set = obj(r.settings);
+  const ds = defaultSettings();
+  st.settings = {
+    audioEnabled: bool(set.audioEnabled, ds.audioEnabled),
+    musicEnabled: bool(set.musicEnabled, ds.musicEnabled),
+    effectsEnabled: bool(set.effectsEnabled, ds.effectsEnabled),
+    musicVolume: num(set.musicVolume, ds.musicVolume, 0, 1),
+    sfxVolume: num(set.sfxVolume, ds.sfxVolume, 0, 1),
+    vibrationEnabled: bool(set.vibrationEnabled, ds.vibrationEnabled),
+    notificationsEnabled: bool(set.notificationsEnabled, ds.notificationsEnabled),
+    language: str(set.language, ds.language),
+    textScale: num(set.textScale, 1, 0.8, 1.6),
+    colorblind: bool(set.colorblind, false),
+    reduceFlashing: bool(set.reduceFlashing, false),
+    screenShake: bool(set.screenShake, true),
+    graphics: set.graphics === 'low' ? 'low' : 'high',
+  };
+  const stats = obj(r.stats);
+  const ds2 = defaultStats();
+  st.stats = { ...ds2 };
+  for (const k of Object.keys(ds2) as (keyof typeof ds2)[]) {
+    if (k === 'soldByCategory') continue;
+    (st.stats as any)[k] = num(stats[k], 0);
+  }
+  st.stats.soldByCategory = Object.fromEntries(Object.entries(obj(stats.soldByCategory)).map(([k, v]) => [k, num(v, 0)]));
+  const ev = obj(r.events);
+  st.events = {
+    active: arr<any>(ev.active).filter((e) => e && typeof e.id === 'string').map((e) => ({ id: e.id, remaining: num(e.remaining, 0, 0, 600), duration: num(e.duration, 1, 1, 600), served: num(e.served, 0), lost: num(e.lost, 0), earned: num(e.earned, 0) })),
+    nextRollIn: num(ev.nextRollIn, ECONOMY.events.firstDelay, 0, 3600),
+  };
+  const ts = obj(r.timestamps);
+  st.timestamps = { created: num(ts.created, now, 0, 1e15), lastSave: num(ts.lastSave, now, 0, 1e15), lastWage: 0 };
+  const po = obj(r.pendingOffline);
+  if (r.pendingOffline && !po.claimed) st.pendingOffline = { seconds: num(po.seconds, 0), amount: num(po.amount, 0), claimed: false };
+  st.incomeBuckets = arr<number>(r.incomeBuckets).map((v) => num(v, 0)).slice(-30);
+  st.rngSeed = Math.floor(num(r.rngSeed, 1, 0, 2 ** 31));
+  return st;
+}
+
+function validateShop(raw: any, id: string) {
+  const def = createShop(id);
+  const s = obj(raw);
+  if (!raw) return def;
+  const stage = Math.floor(num(s.stage, def.stage, 0, EXPANSIONS.length - 1));
+  const size = EXPANSIONS[stage].size;
+  const seen = new Set<string>();
+  const uids = new Set<number>();
+  const objects = arr<any>(s.objects)
+    .filter((o) => o && OBJECT_MAP[o.kind] && Number.isInteger(o.x) && Number.isInteger(o.y) && o.x >= 0 && o.y >= 0 && o.x < size && o.y < size)
+    .filter((o) => {
+      const k = `${o.x},${o.y}`;
+      if (seen.has(k) || uids.has(o.uid)) return false;
+      seen.add(k);
+      uids.add(o.uid);
+      return true;
+    })
+    .map((o) => {
+      const odef = OBJECT_MAP[o.kind];
+      return {
+        uid: Math.floor(num(o.uid, 0, 1, 1e9)),
+        kind: o.kind,
+        x: o.x,
+        y: o.y,
+        dir: ([0, 1, 2, 3].includes(o.dir) ? o.dir : 1) as 0 | 1 | 2 | 3,
+        tier: Math.floor(num(o.tier, 0, 0, odef.tiers.length - 1)),
+        productId: PRODUCT_MAP[o.productId] ? o.productId : undefined,
+        stock: Math.floor(num(o.stock, 0, 0, 1000)),
+        progress: num(o.progress, 0, 0, 1),
+      };
+    });
+  // A shop must always keep a checkout and a display; restore defaults if the save lost them.
+  const hasCheckout = objects.some((o) => o.kind === 'checkout');
+  const hasDisplay = objects.some((o) => OBJECT_MAP[o.kind].category === 'display');
+  const finalObjects = hasCheckout && hasDisplay ? objects : def.objects;
+  const maxUid = finalObjects.reduce((m, o) => Math.max(m, o.uid), 0);
+  return {
+    locationId: id,
+    open: bool(s.open, def.open),
+    stage,
+    size,
+    objects: finalObjects,
+    nextUid: Math.max(maxUid + 1, Math.floor(num(s.nextUid, 1, 1, 1e9))),
+    departments: [...new Set(arr<string>(s.departments).filter((d) => typeof d === 'string'))].length ? [...new Set(arr<string>(s.departments))] : def.departments,
+    staff: arr<any>(s.staff)
+      .filter((e) => e && STAFF_MAP[e.type as keyof typeof STAFF_MAP])
+      .map((e) => ({ id: Math.floor(num(e.id, 1, 1, 1e9)), type: e.type, name: str(e.name, 'Sam'), level: Math.floor(num(e.level, 1, 1, STAFF_MAX_LEVEL)), trait: TRAIT_MAP[e.trait] ? e.trait : 'fast', assignedUid: undefined })),
+    dirt: arr<any>(s.dirt).filter((d) => d && Number.isInteger(d.x) && Number.isInteger(d.y) && d.x >= 0 && d.y >= 0 && d.x < size && d.y < size).slice(0, 50),
+    satisfaction: num(s.satisfaction, def.satisfaction, 0, 100),
+    incomeRate: num(s.incomeRate, 0, 0, 1e12),
+    construction: s.construction ? { targetStage: Math.min(EXPANSIONS.length - 1, Math.floor(num(s.construction.targetStage, stage + 1))), remaining: num(s.construction.remaining, 0, 0, 60), duration: num(s.construction.duration, 1, 0.1, 60) } : undefined,
+    pendingPlacements: arr<any>(s.pendingPlacements).filter((p) => p && OBJECT_MAP[p.kind]).map((p) => ({ kind: p.kind, productId: PRODUCT_MAP[p.productId] ? p.productId : undefined })),
+    purchases: Object.fromEntries(Object.entries(obj(s.purchases)).map(([k, v]) => [k, num(v, 0)])),
+    hires: Object.fromEntries(Object.entries(obj(s.hires)).map(([k, v]) => [k, num(v, 0)])),
+  };
+}
+
+export interface LoadResult {
+  state: GameState;
+  source: 'main' | 'backup' | 'new';
+  migratedFrom?: number;
+  error?: string;
+}
+
+/**
+ * SaveManager: versioned saves with checksum, automatic backup of the previous good save,
+ * migration of old versions and validation/repair on load.
+ */
+export class SaveManager {
+  lastError?: string;
+
+  constructor(private store: KeyValueStore) {}
+
+  serialize(state: GameState, now = Date.now()): string {
+    state.timestamps.lastSave = now;
+    const body = JSON.stringify(state);
+    const env: SaveEnvelope = { version: SAVE_VERSION, savedAt: now, checksum: checksum(body), state };
+    return JSON.stringify(env);
+  }
+
+  save(state: GameState, now = Date.now()): boolean {
+    try {
+      const data = this.serialize(state, now);
+      const prev = this.store.getItem(SAVE_KEY);
+      if (prev && this.parse(prev)) this.store.setItem(BACKUP_KEY, prev);
+      this.store.setItem(SAVE_KEY, data);
+      return true;
+    } catch (e) {
+      this.lastError = String(e);
+      return false;
+    }
+  }
+
+  /** Parses an envelope; returns null when corrupt or checksum mismatch. */
+  parse(text: string): { state: any; version: number } | null {
+    try {
+      const env = JSON.parse(text) as Partial<SaveEnvelope>;
+      if (!env || typeof env !== 'object' || !env.state) return null;
+      const body = JSON.stringify(env.state);
+      if (env.checksum && env.checksum !== checksum(body)) return null;
+      return { state: env.state, version: typeof env.version === 'number' ? env.version : 1 };
+    } catch {
+      return null;
+    }
+  }
+
+  load(now = Date.now()): LoadResult {
+    for (const [key, source] of [
+      [SAVE_KEY, 'main'],
+      [BACKUP_KEY, 'backup'],
+    ] as const) {
+      const text = this.store.getItem(key);
+      if (!text) continue;
+      const parsed = this.parse(text);
+      if (!parsed) {
+        this.lastError = `corrupt ${source} save`;
+        continue;
+      }
+      try {
+        const fromVersion = parsed.version;
+        const migrated = migrate({ ...parsed.state, version: parsed.state.version ?? fromVersion });
+        const state = validate(migrated, now);
+        return { state, source, migratedFrom: fromVersion < SAVE_VERSION ? fromVersion : undefined };
+      } catch (e) {
+        this.lastError = String(e);
+      }
+    }
+    return { state: createInitialState(now), source: 'new', error: this.lastError };
+  }
+
+  hasSave(): boolean {
+    return !!this.store.getItem(SAVE_KEY) || !!this.store.getItem(BACKUP_KEY);
+  }
+
+  reset(): void {
+    this.store.removeItem(SAVE_KEY);
+    this.store.removeItem(BACKUP_KEY);
+  }
+}
