@@ -1,0 +1,199 @@
+import './styles.css';
+import { Game } from './sim/game';
+import { Renderer } from './render/renderer';
+import { AudioManager } from './audio/audio';
+import { Haptics } from './services/haptics';
+import { NotificationService } from './services/notifications';
+import { AnalyticsManager } from './services/analytics';
+import { SaveManager, MemoryStore } from './save/saveManager';
+import type { KeyValueStore } from './save/saveManager';
+import { UIManager } from './ui/ui';
+import { createInitialState } from './core/state';
+import { setLanguage } from './core/i18n';
+import type { GameEvents } from './core/bus';
+
+/** Events after which we save soon (purchases & important progression). */
+const SAVE_TRIGGERS: (keyof GameEvents)[] = ['upgradePurchased', 'objectPlaced', 'objectUpgraded', 'objectRemoved', 'levelUp', 'productUnlocked', 'departmentUnlocked', 'expansionStarted', 'expansionCompleted', 'employeeHired', 'employeeFired', 'employeeLeveled', 'questClaimed', 'achievementClaimed', 'locationUnlocked', 'locationSwitched', 'franchised', 'offlineEarnings', 'crateCollected', 'milestone'];
+
+function safeStorage(): KeyValueStore {
+  try {
+    const k = '__tt_test__';
+    window.localStorage.setItem(k, '1');
+    window.localStorage.removeItem(k);
+    return window.localStorage;
+  } catch {
+    console.warn('[save] localStorage unavailable — progress will not persist this session');
+    return new MemoryStore();
+  }
+}
+
+class App {
+  game!: Game;
+  renderer!: Renderer;
+  ui!: UIManager;
+  readonly audio = new AudioManager();
+  readonly haptics = new Haptics();
+  readonly notifications = new NotificationService();
+  readonly analytics = new AnalyticsManager();
+  readonly saves = new SaveManager(safeStorage());
+  private last = performance.now();
+  private saveSoon = -1;
+  private autosave = 0;
+  private inGame = false;
+  private unsubSave: (() => void) | null = null;
+
+  boot(): void {
+    // 1. Services
+    if (import.meta.env.DEV) this.analytics.addSink((n, p) => console.debug('[analytics]', n, p));
+    // 2. Configuration is bundled as typed data modules (src/config) — nothing to fetch.
+    // 3–5. Load, validate and migrate the save (falls back to backup, then to a new game).
+    const loaded = this.saves.load(Date.now());
+    if (loaded.error) console.warn('[save]', loaded.error);
+    if (loaded.migratedFrom) console.info(`[save] migrated from v${loaded.migratedFrom}`);
+    setLanguage(loaded.state.settings.language);
+    // 6–7. Shop + NPC systems
+    this.game = this.makeGame(loaded.state);
+    const canvas = document.getElementById('game') as HTMLCanvasElement;
+    this.renderer = new Renderer(canvas, this.game);
+    this.ui = new UIManager(document.getElementById('ui')!, canvas, this.game, this.renderer, this.audio, this.haptics, this.notifications, {
+      debugEnabled: import.meta.env.DEV,
+      continueGame: () => this.enterGame(),
+      newGame: () => this.newGame(),
+      saveNow: () => this.save(),
+      toMainMenu: () => {
+        this.save();
+        this.inGame = false;
+        this.ui.menus.main();
+      },
+      settingsChanged: () => {
+        setLanguage(this.game.state.settings.language);
+        this.ui.applySettings();
+        this.requestSave();
+      },
+      resetSave: () => {
+        this.saves.reset();
+        this.newGame();
+      },
+      requestNotifications: () => this.notifications.requestPermission(),
+      hasSave: () => this.saves.hasSave(),
+    });
+    window.addEventListener('resize', () => this.renderer.resize());
+    document.addEventListener('visibilitychange', () => this.onVisibility());
+    window.addEventListener('pagehide', () => {
+      this.save();
+      this.analytics.track('session_ended', {});
+    });
+    this.analytics.track('session_started', {});
+    // First launch: show the logo briefly, then start playing immediately. Returning: main menu.
+    const splash = document.getElementById('splash');
+    const first = loaded.source === 'new';
+    setTimeout(
+      () => {
+        splash?.classList.add('gone');
+        setTimeout(() => splash?.remove(), 600);
+        if (first) {
+          this.analytics.track('game_started', {});
+          this.enterGame();
+        } else this.ui.menus.main();
+      },
+      first ? 900 : 500,
+    );
+    // 10. Start the loop
+    requestAnimationFrame((t) => this.frame(t));
+  }
+
+  private makeGame(state = createInitialState()): Game {
+    const g = new Game(state, { analytics: (n, p) => this.analytics.track(n, p) });
+    this.unsubSave?.();
+    const offs = SAVE_TRIGGERS.map((ev) => g.bus.on(ev, () => this.requestSave()));
+    this.unsubSave = () => offs.forEach((o) => o());
+    return g;
+  }
+
+  /** 8–9. Offline rewards + welcome back, then start simulating. */
+  private enterGame(): void {
+    this.ui.menus.close();
+    this.inGame = true;
+    this.checkOffline();
+    this.audio.unlock();
+  }
+
+  private checkOffline(): void {
+    const res = this.game.offline.compute(Date.now());
+    const pending = this.game.state.pendingOffline;
+    if (res || (pending && !pending.claimed)) {
+      const p = this.game.state.pendingOffline!;
+      this.ui.showWelcomeBack(p.seconds, p.amount);
+    }
+    this.save();
+  }
+
+  private newGame(): void {
+    const settings = this.game?.state.settings;
+    this.saves.reset();
+    const state = createInitialState(Date.now());
+    if (settings) state.settings = settings;
+    this.game = this.makeGame(state);
+    this.renderer.setGame(this.game);
+    this.ui.setGame(this.game);
+    this.save();
+    this.analytics.track('game_started', {});
+    this.enterGame();
+  }
+
+  requestSave(): void {
+    if (this.saveSoon < 0) this.saveSoon = 1.0;
+  }
+
+  save(): void {
+    if (!this.game) return;
+    if (!this.saves.save(this.game.state, Date.now())) console.warn('[save] failed', this.saves.lastError);
+  }
+
+  private onVisibility(): void {
+    if (document.hidden) {
+      this.save();
+      this.audio.suspend();
+    } else {
+      this.audio.resume();
+      this.last = performance.now();
+      if (this.inGame) this.checkOffline();
+    }
+  }
+
+  private frame(now: number): void {
+    let dt = (now - this.last) / 1000;
+    this.last = now;
+    if (dt > 30 && this.inGame) {
+      // The device slept with the page open: treat the gap as offline time.
+      this.checkOffline();
+      dt = 0;
+    }
+    try {
+      this.game.paused = !this.inGame || this.ui.blockingOverlay;
+      this.game.update(dt);
+      const vis = Math.min(dt, 0.1);
+      this.renderer.render(vis);
+      this.ui.update(vis);
+      if (this.inGame) {
+        this.autosave += dt;
+        if (this.autosave > 15) {
+          this.autosave = 0;
+          this.save();
+        }
+        if (this.saveSoon >= 0) {
+          this.saveSoon -= dt;
+          if (this.saveSoon < 0) this.save();
+        }
+      }
+    } catch (e) {
+      // Never let a rendering/UI glitch kill the loop.
+      console.error('[frame]', e);
+    }
+    requestAnimationFrame((t) => this.frame(t));
+  }
+}
+
+const app = new App();
+(window as any).__tinyTycoon = app;
+app.boot();

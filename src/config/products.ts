@@ -22,7 +22,7 @@ export interface ProductDef {
 
 // Cheap goods: low profit / high demand. Premium: high profit / lower demand. Special: rare & valuable.
 export const PRODUCTS: ProductDef[] = [
-  { id: 'crisps', category: 'snacks', department: 'snacks', cost: 2, price: 4, demand: 1.0, restockTime: 1, requiredLevel: 1, unlockCost: 0, rarity: 'common', display: 'shelf', icon: '🥔', color: '#f2c14e' },
+  { id: 'crisps', category: 'snacks', department: 'snacks', cost: 2, price: 4, demand: 1.0, restockTime: 1, requiredLevel: 1, unlockCost: 0, rarity: 'common', display: 'shelf', icon: '🍟', color: '#f2c14e' },
   { id: 'candy', category: 'sweets', department: 'snacks', cost: 1, price: 3, demand: 1.1, restockTime: 1, requiredLevel: 2, unlockCost: 40, rarity: 'common', display: 'shelf', icon: '🍬', color: '#ff7eb6' },
   { id: 'soda', category: 'drinks', department: 'drinks', cost: 2, price: 5, demand: 1.0, restockTime: 1, requiredLevel: 2, unlockCost: 0, rarity: 'common', display: 'fridge', icon: '🥤', color: '#e8505b' },
   { id: 'chocolate', category: 'sweets', department: 'snacks', cost: 3, price: 7, demand: 0.85, restockTime: 1.2, requiredLevel: 3, unlockCost: 120, rarity: 'common', display: 'shelf', icon: '🍫', color: '#8b5a2b' },

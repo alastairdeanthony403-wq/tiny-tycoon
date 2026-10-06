@@ -44,7 +44,7 @@ it('progression pacing stays healthy for a sensible player (60 min bot)', () => 
     }
   }
   log.push('max gap between purchases: ' + maxGap + 's');
-  if (process.env.BALANCE_REPORT) console.log(log.join('\n'));
+  if ((globalThis as any).process?.env?.BALANCE_REPORT) console.log(log.join('\n'));
   expect(g.errors).toEqual([]);
   expect(g.state.player.level).toBeGreaterThanOrEqual(10);
   expect(g.shop.stage).toBeGreaterThanOrEqual(2);
