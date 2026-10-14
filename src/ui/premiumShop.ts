@@ -6,7 +6,8 @@ import type { Renderer } from '../render/renderer';
 import { el, clear, guarded, toggle, setText } from './dom';
 import { card, tag } from './components';
 import { drawObject, drawPerson } from '../render/sprites';
-import { formatNumber } from '../core/format';
+import { formatNumber, formatMoney } from '../core/format';
+import { getSkin } from '../render/skins';
 import { t } from '../core/i18n';
 
 type Tab = 'featured' | 'cosmetic' | 'gems' | 'convenience';
@@ -67,6 +68,7 @@ export class PremiumShop {
       this.body.append(this.tabs());
       const list = el('div', { class: 'ps-scroll' });
       const items = PREMIUM_CATALOG.filter((p) => (this.tab === 'featured' ? p.featured : p.category === this.tab));
+      if (this.tab === 'cosmetic' || this.tab === 'featured') list.append(this.themeLine());
       if (!items.length) list.append(el('p', { class: 'hint' }, t('premium.empty')));
       for (const p of items) list.append(this.productCard(p));
       if (this.tab === 'gems') list.append(el('p', { class: 'hint' }, t('premium.gems_note')));
@@ -146,6 +148,32 @@ export class PremiumShop {
     return el('span', { class: 'tags' }, tag(`✓ ${t('premium.state.owned')}`, 'good'), equipped ? tag(`★ ${t(p.grant.kind === 'automation' ? 'premium.state.on' : 'premium.state.equipped')}`, 'lv') : null, m.ownsTestOnly(p.id) ? tag(`🧪 ${t('premium.state.test')}`, 'special') : null);
   }
 
+  /** "🔒 Level 15 · £25K revenue" on cards whose progression gates are not met yet. */
+  private lockTag(p: PremiumProduct): HTMLElement | null {
+    const r = this.app.game.monetization.requirements(p.id);
+    if (r.met) return null;
+    const parts: string[] = [];
+    if (r.level && !r.level.met) parts.push(t('reason.level_n', { n: r.level.need }));
+    if (r.lifetimeRevenue && !r.lifetimeRevenue.met) parts.push(t('premium.req.revenue_short', { amount: formatMoney(r.lifetimeRevenue.need) }));
+    return tag(`🔒 ${parts.join(' · ')}`, 'locked');
+  }
+
+  /** Requirement checklist with current progress (shown in the product detail). */
+  private requirementsBlock(p: PremiumProduct): HTMLElement {
+    const r = this.app.game.monetization.requirements(p.id);
+    const rows: HTMLElement[] = [];
+    if (r.level) rows.push(el('li', { class: r.level.met ? 'met' : 'unmet' }, `${r.level.met ? '✓' : '✗'} ${t('premium.req.level', { need: r.level.need, have: r.level.have })}`));
+    if (r.lifetimeRevenue) rows.push(el('li', { class: r.lifetimeRevenue.met ? 'met' : 'unmet' }, `${r.lifetimeRevenue.met ? '✓' : '✗'} ${t('premium.req.revenue', { need: formatMoney(r.lifetimeRevenue.need), have: formatMoney(r.lifetimeRevenue.have) })}`));
+    return el('div', { class: `ps-reqs ${r.met ? 'all-met' : ''}` }, el('b', {}, r.met ? t('premium.req.unlocked') : t('premium.req.title')), el('ul', {}, ...rows));
+  }
+
+  /** Which premium shop theme is on right now (only one at a time). */
+  private themeLine(): HTMLElement {
+    const skin = this.app.game.state.monetization.equipped.skin;
+    const owner = PREMIUM_CATALOG.find((x) => x.grant.kind === 'skin' && x.grant.skin === skin);
+    return el('p', { class: 'hint ps-theme-line' }, owner ? t('premium.theme_current', { name: t(`premium.${owner.id}.name`) }) : t('premium.theme_none'));
+  }
+
   private priceLine(p: PremiumProduct): string {
     const s = this.store();
     const parts: string[] = [];
@@ -159,7 +187,7 @@ export class PremiumShop {
     const c = card(
       `ps-card ${owned ? 'owned' : ''}`,
       el('div', { class: 'ps-thumb', style: { background: `linear-gradient(135deg, ${p.preview.swatch.join(', ')})` }, 'aria-hidden': 'true' }, p.preview.icon),
-      el('div', { class: 'card-main' }, el('b', {}, t(`premium.${p.id}.name`)), el('small', {}, t(`premium.${p.id}.desc`)), owned ? null : el('div', { class: 'ps-price' }, this.priceLine(p)), this.stateTag(p)),
+      el('div', { class: 'card-main' }, el('b', {}, t(`premium.${p.id}.name`)), el('small', {}, t(`premium.${p.id}.desc`)), owned ? null : el('div', { class: 'ps-price' }, this.priceLine(p)), this.stateTag(p), owned ? null : this.lockTag(p)),
       el('span', { class: 'ps-chevron', 'aria-hidden': 'true' }, '›'),
     );
     c.setAttribute('role', 'button');
@@ -188,6 +216,7 @@ export class PremiumShop {
     out.append(el('p', { class: 'hint' }, t(p.type === 'consumable' ? 'premium.type.consumable' : 'premium.type.permanent')));
     const st = this.stateTag(p);
     if (st) out.append(st);
+    if (!owned && p.requires) out.append(this.requirementsBlock(p));
     const actions = el('div', { class: 'ps-actions' });
     // Live preview on the actual shop (skins & outfits).
     if (p.grant.kind === 'skin' || p.grant.kind === 'outfits') {
@@ -216,11 +245,12 @@ export class PremiumShop {
     } else {
       if (p.gemPrice) {
         const enough = m.gems >= p.gemPrice;
+        const unlocked = m.requirements(p.id).met;
         actions.append(
           el(
             'button',
-            { class: `btn btn-buy ${enough ? 'affordable' : 'cant'}`, 'data-buy': `gems-${p.id}`, onclick: () => this.confirmGems(p) },
-            el('span', { class: 'ub-label' }, t('premium.buy_with_gems')),
+            { class: `btn btn-buy ${enough && unlocked ? 'affordable' : 'cant'}`, 'data-buy': `gems-${p.id}`, 'aria-disabled': String(!(enough && unlocked)), onclick: () => this.confirmGems(p) },
+            el('span', { class: 'ub-label' }, unlocked ? t('premium.buy_with_gems') : `🔒 ${t('premium.locked')}`),
             el('span', { class: 'ub-price' }, `💎 ${p.gemPrice}`),
             enough ? null : el('span', { class: 'ub-need' }, t('hud.need_more', { amount: `💎 ${p.gemPrice - m.gems}` })),
           ),
@@ -245,12 +275,37 @@ export class PremiumShop {
 
   /** Small canvas preview drawn with the real game sprites (decor bundle & staff outfits). */
   private previewCanvas(p: PremiumProduct): HTMLCanvasElement | null {
-    if (p.grant.kind !== 'decor' && p.grant.kind !== 'outfits') return null;
+    if (p.grant.kind !== 'decor' && p.grant.kind !== 'outfits' && p.grant.kind !== 'skin') return null;
     const c = el('canvas', { class: 'ps-canvas', width: 480, height: 200, 'aria-label': t(`premium.${p.id}.name`) }) as HTMLCanvasElement;
     const ctx = c.getContext('2d');
     if (!ctx) return null;
     ctx.scale(2, 2);
-    if (p.grant.kind === 'decor') {
+    if (p.grant.kind === 'skin') {
+      // Mini scene drawn with the real sprites and the theme applied: shelf, fridge, checkout, staff.
+      const skin = getSkin(p.grant.skin);
+      if (!skin) return null;
+      ctx.save();
+      ctx.translate(120, 30);
+      const floor = [skin.palette.floorA, skin.palette.floorB];
+      for (let y = 0; y < 2; y++) for (let x = 0; x < 3; x++) {
+        const a = { x: (x - y) * 32, y: (x + y) * 16 };
+        ctx.fillStyle = floor[(x + y) % 2];
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(a.x + 32, a.y + 16);
+        ctx.lineTo(a.x, a.y + 32);
+        ctx.lineTo(a.x - 32, a.y + 16);
+        ctx.closePath();
+        ctx.fill();
+      }
+      const info = { stockRatio: 1, time: 1, skin, sparkle: false };
+      drawObject(ctx, { uid: 1, kind: 'shelf', x: 0, y: 0, dir: 1, tier: 1, productId: 'crisps', stock: 10, progress: 0 }, info);
+      drawObject(ctx, { uid: 2, kind: 'shelf', x: 1, y: 0, dir: 1, tier: 2, productId: 'candy', stock: 10, progress: 0 }, info);
+      drawObject(ctx, { uid: 3, kind: 'checkout', x: 2, y: 1, dir: 2, tier: 0, stock: 0, progress: 0 }, info);
+      const u = skin.uniform ?? { body: '#3a86ff', apron: '#3a86ff' };
+      drawPerson(ctx, 0, 60, { body: u.body, apron: u.apron, head: '#e0ac69', hair: '#4a3728', scale: 1.1, hat: 'cap' }, { moving: false, phase: 0, facing: 1 });
+      ctx.restore();
+    } else if (p.grant.kind === 'decor') {
       p.grant.objects.forEach((kind, i) => {
         ctx.save();
         ctx.translate(60 + i * 60, 30);
@@ -299,6 +354,11 @@ export class PremiumShop {
   private confirmGems(p: PremiumProduct): void {
     const m = this.app.game.monetization;
     if (!p.gemPrice) return;
+    if (!m.requirements(p.id).met) {
+      this.app.sfx('error');
+      this.app.toast(t('premium.err.locked'), '🔒', 'bad');
+      return;
+    }
     if (m.gems < p.gemPrice) {
       this.app.sfx('error');
       this.app.toast(t('premium.not_enough_gems', { n: p.gemPrice - m.gems }), '💎', 'bad');

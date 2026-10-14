@@ -16,6 +16,7 @@ import { DEPARTMENT_MAP } from '../config/departments';
 import { DOOR_TILE, STOCKROOM_TILE } from '../core/state';
 import { accessTile } from '../sim/grid';
 import { formatMoney } from '../core/format';
+import { getSkin } from './skins';
 import { t } from '../core/i18n';
 
 export type PickResult =
@@ -41,8 +42,6 @@ const OUTFITS: Record<string, { body: string; apron: string }> = {
   diner: { body: '#ff6b9a', apron: '#2ec4b6' },
 };
 
-/** Neon Nights shop palette (overrides the cosmetic theme while equipped). */
-const NEON_THEME = { id: 'neon_nights', icon: '🌃', starCost: 0, floorA: '#1d1238', floorB: '#271a4d', wall: '#2b1055', wallTop: '#ff2bd6', trim: '#00f0ff' };
 
 const STAFF_STYLE: Record<string, Partial<PersonStyle>> = {
   cashier: { hat: 'cap', apron: '#3a86ff' },
@@ -53,6 +52,11 @@ const STAFF_STYLE: Record<string, Partial<PersonStyle>> = {
 };
 
 /** Renders the miniature-diorama shop with Canvas 2D. Pure view: reads game state, never mutates it. */
+const motionQuery = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
+function prefersReducedMotion(): boolean {
+  return !!motionQuery?.matches;
+}
+
 export class Renderer {
   readonly ctx: CanvasRenderingContext2D;
   readonly camera = new Camera();
@@ -166,11 +170,12 @@ export class Renderer {
   /** Screen shake needs the shake setting on and reduced motion off. */
   get shakeAllowed(): boolean {
     const s = this.game.state.settings;
-    return s.screenShake && !s.reduceFlashing;
+    return s.screenShake && !this.reducedMotion;
   }
 
+  /** In-game "reduce flashing" setting or the OS-level reduced-motion preference. */
   get reducedMotion(): boolean {
-    return this.game.state.settings.reduceFlashing;
+    return this.game.state.settings.reduceFlashing || prefersReducedMotion();
   }
 
   activeSkin(): string | null {
@@ -198,6 +203,32 @@ export class Renderer {
     ctx.beginPath();
     ctx.arc(door.x, door.y, 60, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  /**
+   * Golden Shelves: static warm light pools (cheap gradients, no per-frame particles) and
+   * a gold picture rail along the back walls. Sparkles are drawn by the shelves and respect reduced motion.
+   */
+  private goldenLighting(S: number): void {
+    const ctx = this.ctx;
+    const c = iso(S / 2, S / 2);
+    const r = 34 * S;
+    const g = ctx.createRadialGradient(c.x, c.y, 4, c.x, c.y, r);
+    g.addColorStop(0, 'rgba(255,214,120,0.22)');
+    g.addColorStop(1, 'rgba(255,214,120,0)');
+    ctx.fillStyle = g;
+    diamondPath(ctx, 0, 0, S, S);
+    ctx.fill();
+    ctx.strokeStyle = '#f2b632';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    const a = iso(0, S, WALL_H - 8);
+    const b = iso(0, 0, WALL_H - 8);
+    const d = iso(S, 0, WALL_H - 8);
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.lineTo(d.x, d.y);
+    ctx.stroke();
   }
 
   /** Glowing neon tubes along the walls, lit windows and a buzzing sign. */
@@ -302,8 +333,11 @@ export class Renderer {
     const ctx = this.ctx;
     const shop = g.shop;
     const loc = LOCATION_MAP[shop.locationId] ?? LOCATION_MAP.neighborhood;
-    const skin = this.activeSkin();
-    const theme = skin === 'neon_nights' ? NEON_THEME : THEME_MAP[g.state.cosmetics.theme] ?? THEME_MAP.classic;
+    const skinDef = getSkin(this.activeSkin());
+    const skin = skinDef?.effect ?? null;
+    // A premium skin overrides the Star theme while equipped; unequipping shows the Star theme again.
+    const baseTheme = THEME_MAP[g.state.cosmetics.theme] ?? THEME_MAP.classic;
+    const theme = skinDef ? { ...baseTheme, ...skinDef.palette } : baseTheme;
     this.particles.maxParticles = g.state.settings.graphics === 'low' ? 120 : 400;
     this.particles.enabled = g.state.settings.effectsEnabled;
     this.updateCamera(dt);
@@ -337,7 +371,7 @@ export class Renderer {
 
     const S = shop.size;
     this.drawOutside(S, loc);
-    if (skin === 'neon_nights') this.nightOverlay(S);
+    if (skin === 'neon') this.nightOverlay(S);
     // Street NPCs are behind the left wall.
     const inside: Customer[] = [];
     for (const c of g.world.customers) {
@@ -346,7 +380,8 @@ export class Renderer {
     }
     this.drawFloor(S, theme);
     this.drawWalls(S, theme);
-    if (skin === 'neon_nights') this.neonTrims(S);
+    if (skin === 'neon') this.neonTrims(S);
+    if (skin === 'golden') this.goldenLighting(S);
     this.drawSortables(inside);
     this.drawOverlays();
     this.particles.draw(ctx, false);
@@ -665,21 +700,21 @@ export class Renderer {
     const name = t(`location.${g.shop.locationId}`);
     ctx.font = '900 10px Nunito, system-ui, sans-serif';
     const w = Math.max(80, ctx.measureText(name).width + 34);
+    const sign = getSkin(this.activeSkin())?.sign;
     roundRect(ctx, mid.x - w / 2, mid.y - 10, w, 19, 8);
-    ctx.fillStyle = theme.trim;
-    if (this.activeSkin() === 'neon_nights') {
-      ctx.save();
-      ctx.shadowColor = '#ff2bd6';
-      ctx.shadowBlur = 18;
-      ctx.fillStyle = '#ff2bd6';
-      ctx.fill();
-      ctx.restore();
-      roundRect(ctx, mid.x - w / 2, mid.y - 10, w, 19, 8);
-    } else ctx.fill();
-    ctx.strokeStyle = '#fff';
+    ctx.save();
+    if (sign?.glow) {
+      ctx.shadowColor = sign.glow;
+      ctx.shadowBlur = 16;
+    }
+    ctx.fillStyle = sign?.fill ?? theme.trim;
+    ctx.fill();
+    ctx.restore();
+    roundRect(ctx, mid.x - w / 2, mid.y - 10, w, 19, 8);
+    ctx.strokeStyle = sign?.border ?? '#fff';
     ctx.lineWidth = 2;
     ctx.stroke();
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = sign?.text ?? '#fff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(`${LOCATION_MAP[g.shop.locationId]?.icon ?? ''} ${name}`, mid.x, mid.y);
@@ -747,10 +782,9 @@ export class Renderer {
       ctx.translate(-base.x, -base.y);
     }
     if (this.placement && this.placement.ignoreUid === o.uid) ctx.globalAlpha = 0.3;
-    const skin = this.activeSkin();
     drawObject(ctx, o, {
-      gold: skin === 'golden_shelves',
-      neon: skin === 'neon_nights',
+      skin: getSkin(this.activeSkin()),
+      sparkle: !this.reducedMotion,
       stockRatio: isDisplay ? o.stock / Math.max(1, cap) : 1,
       closed: o.kind === 'checkout' && !(o.uid === owner || rt?.cashierId),
       producing: isDisplay && o.stock < cap,
@@ -786,7 +820,8 @@ export class Renderer {
     const data = this.game.shop.staff.find((s) => s.id === e.id);
     const def = STAFF_MAP[e.type];
     const p = iso(e.pos.x, e.pos.y);
-    const outfit = OUTFITS[this.activeOutfit() ?? ''];
+    // An equipped staff outfit wins; otherwise the shop theme may supply a matching uniform.
+    const outfit = OUTFITS[this.activeOutfit() ?? ''] ?? getSkin(this.activeSkin())?.uniform;
     const style: PersonStyle = { body: def.color === '#ffffff' ? '#e9ecef' : def.color, head: '#e0ac69', hair: '#4a3728', scale: 1.02, ...STAFF_STYLE[e.type], ...(outfit ? { body: outfit.body, apron: outfit.apron } : {}) };
     drawPerson(this.ctx, p.x, p.y, style, {
       moving: e.moving,

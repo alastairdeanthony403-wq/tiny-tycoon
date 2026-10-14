@@ -4,7 +4,13 @@ import { PREMIUM_MAP, PREMIUM_CATALOG, BASE_LAYOUT_SLOTS, MAX_GEMS } from '../mo
 import type { PremiumProduct, PremiumProductId } from '../monetization/catalog';
 import { OBJECT_MAP } from '../config/objects';
 
-export type GemSpendResult = { ok: true } | { ok: false; reason: 'unknown' | 'owned' | 'not_for_gems' | 'insufficient' | 'busy' };
+export type GemSpendResult = { ok: true } | { ok: false; reason: 'unknown' | 'owned' | 'not_for_gems' | 'insufficient' | 'busy' | 'locked' };
+
+export interface RequirementStatus {
+  met: boolean;
+  level?: { need: number; have: number; met: boolean };
+  lifetimeRevenue?: { need: number; have: number; met: boolean };
+}
 
 const LEDGER_CAP = 200;
 
@@ -64,12 +70,29 @@ export class MonetizationManager {
     return add;
   }
 
+  /** Progression gates for a product (level / lifetime revenue). */
+  requirements(id: PremiumProductId): RequirementStatus {
+    const req = PREMIUM_MAP[id]?.requires;
+    const p = this.game.state.player;
+    const out: RequirementStatus = { met: true };
+    if (req?.level !== undefined) {
+      out.level = { need: req.level, have: p.level, met: p.level >= req.level };
+      out.met &&= out.level.met;
+    }
+    if (req?.lifetimeRevenue !== undefined) {
+      out.lifetimeRevenue = { need: req.lifetimeRevenue, have: p.lifetimeRevenue, met: p.lifetimeRevenue >= req.lifetimeRevenue };
+      out.met &&= out.lifetimeRevenue.met;
+    }
+    return out;
+  }
+
   /** Spend Gems on a permanent item. Atomic: validate, deduct once, grant once. */
   buyWithGems(id: PremiumProductId): GemSpendResult {
     const p = PREMIUM_MAP[id];
     if (!p) return { ok: false, reason: 'unknown' };
     if (this.spending) return { ok: false, reason: 'busy' };
     if (p.ownership === 'once' && this.owns(id)) return { ok: false, reason: 'owned' };
+    if (!this.requirements(id).met) return { ok: false, reason: 'locked' };
     const price = p.gemPrice;
     if (price === undefined || !isGemAmount(price) || price === 0) return { ok: false, reason: 'not_for_gems' };
     if (this.gems < price) return { ok: false, reason: 'insufficient' };

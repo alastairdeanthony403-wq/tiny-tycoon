@@ -51,11 +51,14 @@ updates listener ─► refunded/revoked ─► revoke entitlement / claw back u
 ## 2. Catalog (`src/monetization/catalog.ts`)
 
 Internal ids are permanent once released (they're in saves, ledgers and the backend).
+`LEGACY_PRODUCT_IDS` maps pre-release ids found in saves (e.g. `skin_golden_shelves` → `cosmetic_golden_shelves`) when a save is loaded.
+
+Products may declare `requires: { level?, lifetimeRevenue? }`. `MonetizationManager.requirements(id)` reports each gate, `buyWithGems` refuses with `locked` until all are met, and the Premium Shop lists unmet requirements with the player's progress. Shop themes are defined as data in `src/render/skins.ts` (palette, shelf, display trim, checkout, sign, uniform, effect), so further themes only need a skin entry plus a catalog entry.
 
 | Internal id | Type | Grant | Gem price | Dev sample price* | Store id (iOS = Android) |
 |---|---|---|---|---|---|
 | skin_neon_nights | non-consumable | Neon Nights shop skin | 400 | £2.99 | com.tinytycoon.skin_neon_nights |
-| skin_golden_shelves | non-consumable | Golden shelves skin | 250 | £1.99 | com.tinytycoon.skin_golden_shelves |
+| cosmetic_golden_shelves | non-consumable | Golden Shelves shop theme (gold shelf frames, display trim, checkout accents, signage, uniforms). Requires level 15 and £25,000 lifetime revenue | 200 | — (Gems only, `realMoney: false`; not sold through the app stores) | com.tinytycoon.cosmetic_golden_shelves (reserved, not registered) |
 | bundle_staff_outfits | non-consumable | Smart Suits + Retro Diner outfits | 200 | £1.99 | com.tinytycoon.bundle_staff_outfits |
 | bundle_seasonal_decorations | non-consumable | Snowman, pumpkin lantern, fairy lights (placeable decor) | 200 | £1.99 | com.tinytycoon.bundle_seasonal_decorations |
 | gems_small | consumable | 100 Gems | — | £0.99 | com.tinytycoon.gems_small |

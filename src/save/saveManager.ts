@@ -1,7 +1,7 @@
 import type { GameState } from '../core/types';
 import { SAVE_VERSION } from '../core/types';
 import { createInitialState, createShop, defaultMonetization, defaultSettings, defaultStats } from '../core/state';
-import { PREMIUM_MAP, MAX_GEMS } from '../monetization/catalog';
+import { PREMIUM_MAP, MAX_GEMS, LEGACY_PRODUCT_IDS } from '../monetization/catalog';
 import type { MonetizationState } from '../core/types';
 import { ECONOMY } from '../config/economy';
 import { OBJECT_MAP } from '../config/objects';
@@ -197,7 +197,8 @@ export function validateMonetization(raw: unknown): MonetizationState {
   if (!raw) return d;
   const tot = obj(m.totals);
   const ents: MonetizationState['entitlements'] = {};
-  for (const [id, e] of Object.entries(obj(m.entitlements))) {
+  for (const [rawId, e] of Object.entries(obj(m.entitlements))) {
+    const id = LEGACY_PRODUCT_IDS[rawId] ?? rawId;
     const v = obj(e);
     if (!PREMIUM_MAP[id as keyof typeof PREMIUM_MAP] || typeof v.txId !== 'string') continue;
     ents[id] = { source: v.source === 'gems' ? 'gems' : 'iap', txId: v.txId, test: bool(v.test, false), at: num(v.at, 0, 0, 1e15) };
@@ -220,11 +221,11 @@ export function validateMonetization(raw: unknown): MonetizationState {
     totals: { earned: gemInt(tot.earned), purchased: gemInt(tot.purchased), spent: gemInt(tot.spent), revoked: gemInt(tot.revoked) },
     entitlements: ents,
     processedTx: arr<string>(m.processedTx).filter((x) => typeof x === 'string').slice(-5000),
-    ledger: arr<any>(m.ledger).filter((l) => l && typeof l.id === 'string').slice(-200).map((l) => ({ id: l.id, kind: ['earn', 'purchase', 'spend', 'revoke', 'entitlement'].includes(l.kind) ? l.kind : 'earn', gems: typeof l.gems === 'number' && Number.isSafeInteger(l.gems) ? l.gems : 0, productId: typeof l.productId === 'string' ? l.productId : undefined, txId: typeof l.txId === 'string' ? l.txId : undefined, source: str(l.source, ''), test: bool(l.test, false), at: num(l.at, 0, 0, 1e15) })),
+    ledger: arr<any>(m.ledger).filter((l) => l && typeof l.id === 'string').slice(-200).map((l) => ({ id: l.id, kind: ['earn', 'purchase', 'spend', 'revoke', 'entitlement'].includes(l.kind) ? l.kind : 'earn', gems: typeof l.gems === 'number' && Number.isSafeInteger(l.gems) ? l.gems : 0, productId: typeof l.productId === 'string' ? LEGACY_PRODUCT_IDS[l.productId] ?? l.productId : undefined, txId: typeof l.txId === 'string' ? l.txId : undefined, source: str(l.source, ''), test: bool(l.test, false), at: num(l.at, 0, 0, 1e15) })),
     equipped: { skin: typeof eq.skin === 'string' ? eq.skin : null, outfit: typeof eq.outfit === 'string' ? eq.outfit : null },
     layouts,
     automation: { autoRestock: bool(obj(m.automation).autoRestock, false) },
-    pending: arr<any>(m.pending).filter((x) => x && typeof x.txId === 'string' && PREMIUM_MAP[x.productId as keyof typeof PREMIUM_MAP]).map((x) => ({ txId: x.txId, productId: x.productId, state: x.state === 'purchased' ? 'purchased' : 'pending', at: num(x.at, 0, 0, 1e15) })),
+    pending: arr<any>(m.pending).filter((x) => x && typeof x.txId === 'string' && PREMIUM_MAP[(LEGACY_PRODUCT_IDS[x.productId] ?? x.productId) as keyof typeof PREMIUM_MAP]).map((x) => ({ txId: x.txId, productId: LEGACY_PRODUCT_IDS[x.productId] ?? x.productId, state: x.state === 'purchased' ? 'purchased' : 'pending', at: num(x.at, 0, 0, 1e15) })),
     nextLedgerId: Math.floor(num(m.nextLedgerId, 1, 1, 1e12)),
   };
 }

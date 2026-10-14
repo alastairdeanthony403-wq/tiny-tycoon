@@ -6,10 +6,16 @@ import { SimulatedVerifier, RemoteVerifier } from '../src/monetization/verifier'
 import { NativeBridgeAdapter } from '../src/monetization/nativeBridgeAdapter';
 import { PurchaseController } from '../src/monetization/controller';
 import { PREMIUM_CATALOG, PREMIUM_MAP } from '../src/monetization/catalog';
+import { getSkin } from '../src/render/skins';
 import { SaveManager, MemoryStore, migrate, validate } from '../src/save/saveManager';
 import { createInitialState } from '../src/core/state';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
+
+function unlockGolden(g: Game): void {
+  g.state.player.level = 15;
+  g.state.player.lifetimeRevenue = 25000;
+}
 
 function setup() {
   const g = openGame(7, 1000);
@@ -21,7 +27,7 @@ function setup() {
 describe('catalog', () => {
   it('has the nine required products with stable unique ids and store ids', () => {
     const ids = PREMIUM_CATALOG.map((p) => p.id).sort();
-    expect(ids).toEqual(['automation_basic', 'bundle_seasonal_decorations', 'bundle_staff_outfits', 'gems_large', 'gems_medium', 'gems_small', 'layout_slots_plus', 'skin_golden_shelves', 'skin_neon_nights']);
+    expect(ids).toEqual(['automation_basic', 'bundle_seasonal_decorations', 'bundle_staff_outfits', 'cosmetic_golden_shelves', 'gems_large', 'gems_medium', 'gems_small', 'layout_slots_plus', 'skin_neon_nights']);
     const storeIds = PREMIUM_CATALOG.flatMap((p) => [p.storeIds.ios, p.storeIds.android]);
     expect(new Set(PREMIUM_CATALOG.map((p) => p.storeIds.ios)).size).toBe(9);
     expect(storeIds.every((s) => /^com\.tinytycoon\.[a-z_]+$/.test(s))).toBe(true);
@@ -83,7 +89,8 @@ describe('Gems (earned) and atomic spending', () => {
     g.monetization.buyWithGems('bundle_staff_outfits'); // 200
     expect(g.state.monetization.gemsEarned).toBe(0);
     expect(g.state.monetization.gemsPurchased).toBe(0);
-    expect(g.monetization.buyWithGems('skin_golden_shelves')).toEqual({ ok: false, reason: 'insufficient' });
+    unlockGolden(g);
+    expect(g.monetization.buyWithGems('cosmetic_golden_shelves')).toEqual({ ok: false, reason: 'insufficient' });
   });
 });
 
@@ -113,8 +120,8 @@ describe('purchase state machine (simulated store, test-only)', () => {
     await s.ctl.purchase('gems_small');
     await s.ctl.purchase('gems_small');
     expect(s.g.state.monetization.gemsPurchased).toBe(200);
-    await s.ctl.purchase('skin_golden_shelves');
-    expect(await s.ctl.purchase('skin_golden_shelves')).toEqual({ status: 'owned', productId: 'skin_golden_shelves' });
+    await s.ctl.purchase('bundle_staff_outfits');
+    expect(await s.ctl.purchase('bundle_staff_outfits')).toEqual({ status: 'owned', productId: 'bundle_staff_outfits' });
   });
 
   it('rapid repeated taps start only one transaction', async () => {
@@ -208,12 +215,13 @@ describe('purchase state machine (simulated store, test-only)', () => {
     await s.ctl.purchase('gems_small');
     const gemTx = s.g.state.monetization.ledger.filter((l) => l.kind === "purchase").slice(-1)[0].txId!;
     s.g.monetization.earnGems(400, 'x');
-    s.g.monetization.buyWithGems('skin_golden_shelves'); // spends 250: earned first
+    unlockGolden(s.g);
+    expect(s.g.monetization.buyWithGems('cosmetic_golden_shelves')).toEqual({ ok: true }); // spends 200: earned first
     s.adapter.refund({ transactionId: gemTx, storeId: 'com.tinytycoon.gems_small' });
     await flush();
     expect(s.g.state.monetization.gemsPurchased).toBe(0);
     expect(s.g.monetization.gems).toBeGreaterThanOrEqual(0);
-    expect(s.g.monetization.owns('skin_golden_shelves')).toBe(true); // gem-bought items stay
+    expect(s.g.monetization.owns('cosmetic_golden_shelves')).toBe(true); // gem-bought items stay
   });
 
   it('offline store reports offline and refuses purchases', async () => {
@@ -357,5 +365,121 @@ describe('persistence and migration', () => {
     expect(s.monetization.gemsPurchased).toBe(0);
     expect(s.monetization.entitlements).toEqual({});
     expect(PREMIUM_MAP.skin_neon_nights).toBeDefined();
+  });
+});
+
+describe('Golden Shelves cosmetic (Gems only, progression-gated)', () => {
+  const ID = 'cosmetic_golden_shelves' as const;
+
+  it('is a 200-Gem, level 15 / £25,000 permanent cosmetic with no real-money SKU', () => {
+    const p = PREMIUM_MAP[ID];
+    expect(p).toMatchObject({ gemPrice: 200, realMoney: false, ownership: 'once', type: 'non_consumable', category: 'cosmetic' });
+    expect(p.requires).toEqual({ level: 15, lifetimeRevenue: 25000 });
+    expect(p.grant).toEqual({ kind: 'skin', skin: 'golden_shelves' });
+    const skin = getSkin('golden_shelves')!;
+    expect(skin.effect).toBe('golden');
+    expect(skin.shelf && skin.checkout && skin.sign && skin.uniform && skin.displayTrim).toBeTruthy();
+  });
+
+  it('stays locked below either requirement and unlocks when both are met', () => {
+    const g = openGame(1);
+    g.monetization.earnGems(1000, 't');
+    g.state.player.level = 14;
+    g.state.player.lifetimeRevenue = 1_000_000;
+    expect(g.monetization.requirements(ID)).toMatchObject({ met: false, level: { need: 15, have: 14, met: false }, lifetimeRevenue: { met: true } });
+    expect(g.monetization.buyWithGems(ID)).toEqual({ ok: false, reason: 'locked' });
+    g.state.player.level = 40;
+    g.state.player.lifetimeRevenue = 24_999;
+    expect(g.monetization.requirements(ID)).toMatchObject({ met: false, level: { met: true }, lifetimeRevenue: { need: 25000, have: 24999, met: false } });
+    expect(g.monetization.buyWithGems(ID)).toEqual({ ok: false, reason: 'locked' });
+    expect(g.monetization.gems).toBe(1000);
+    expect(g.monetization.owns(ID)).toBe(false);
+    unlockGolden(g);
+    expect(g.monetization.requirements(ID).met).toBe(true);
+    expect(g.monetization.buyWithGems(ID)).toEqual({ ok: true });
+  });
+
+  it('deducts exactly 200 Gems once; rapid repeated taps never duplicate', () => {
+    const g = openGame(1);
+    unlockGolden(g);
+    g.monetization.earnGems(450, 't');
+    const results = Array.from({ length: 10 }, () => g.monetization.buyWithGems(ID));
+    expect(results[0]).toEqual({ ok: true });
+    expect(results.slice(1).every((r) => !r.ok && r.reason === 'owned')).toBe(true);
+    expect(g.monetization.gems).toBe(250);
+    expect(g.state.monetization.ledger.filter((l) => l.kind === 'spend' && l.productId === ID)).toHaveLength(1);
+    expect(g.state.monetization.equipped.skin).toBe('golden_shelves');
+  });
+
+  it('insufficient Gems leaves the balance and ownership unchanged', () => {
+    const g = openGame(1);
+    unlockGolden(g);
+    g.monetization.earnGems(199, 't');
+    const before = JSON.stringify(g.state.monetization);
+    expect(g.monetization.buyWithGems(ID)).toEqual({ ok: false, reason: 'insufficient' });
+    expect(JSON.stringify(g.state.monetization)).toBe(before);
+    expect(g.monetization.gems).toBe(199);
+  });
+
+  it('cannot be bought with real money through the store controller', async () => {
+    const s = setup();
+    await s.ctl.init();
+    unlockGolden(s.g);
+    expect((await s.ctl.purchase(ID)).status).toBe('unavailable');
+    expect(s.g.monetization.owns(ID)).toBe(false);
+  });
+
+  it('equip / unequip and switching with Neon Nights', () => {
+    const g = openGame(1);
+    unlockGolden(g);
+    expect(g.monetization.equipSkin('golden_shelves')).toBe(false); // not owned
+    g.monetization.earnGems(1000, 't');
+    g.monetization.buyWithGems('skin_neon_nights');
+    expect(g.state.monetization.equipped.skin).toBe('neon_nights');
+    g.monetization.buyWithGems(ID); // a skin is already equipped: buying does not override it
+    expect(g.state.monetization.equipped.skin).toBe('neon_nights');
+    expect(g.monetization.equipSkin('golden_shelves')).toBe(true);
+    expect(getSkin(g.state.monetization.equipped.skin)!.palette.wall).toBe('#3b2412');
+    expect(g.monetization.equipSkin('neon_nights')).toBe(true);
+    expect(getSkin(g.state.monetization.equipped.skin)!.effect).toBe('neon');
+    expect(g.monetization.equipSkin(null)).toBe(true);
+    expect(getSkin(g.state.monetization.equipped.skin)).toBeNull(); // default theme restored
+    expect(g.monetization.owns(ID) && g.monetization.owns('skin_neon_nights')).toBe(true);
+  });
+
+  it('ownership and equipped theme survive a save/reload', () => {
+    const g = openGame(1);
+    unlockGolden(g);
+    g.monetization.earnGems(300, 't');
+    g.monetization.buyWithGems(ID);
+    const sm = new SaveManager(new MemoryStore());
+    sm.save(g.state, T0);
+    const g2 = new Game(sm.load(T0).state, { seed: 1, now: () => T0 });
+    expect(g2.monetization.owns(ID)).toBe(true);
+    expect(g2.state.monetization.equipped.skin).toBe('golden_shelves');
+    expect(g2.monetization.gems).toBe(100);
+    expect(g2.monetization.buyWithGems(ID)).toEqual({ ok: false, reason: 'owned' });
+  });
+
+  it('saves using the earlier test id skin_golden_shelves are mapped to the new id', () => {
+    const raw: any = JSON.parse(JSON.stringify(createInitialState(T0, 1)));
+    raw.monetization.entitlements = { skin_golden_shelves: { source: 'gems', txId: 'gems:1', test: false, at: T0 } };
+    raw.monetization.equipped.skin = 'golden_shelves';
+    const st = validate(raw, T0);
+    expect(Object.keys(st.monetization.entitlements)).toEqual([ID]);
+    expect(st.monetization.equipped.skin).toBe('golden_shelves');
+  });
+
+  it('is purely cosmetic: income and customer simulation are identical with it equipped', () => {
+    const run = (equip: boolean) => {
+      const g = openGame(9, 500);
+      unlockGolden(g);
+      g.monetization.earnGems(200, 't');
+      if (equip) g.monetization.buyWithGems(ID);
+      g.runFor(300);
+      const { monetization, ...rest } = g.state as any;
+      return JSON.stringify(rest);
+    };
+    expect(run(true)).toBe(run(false));
   });
 });

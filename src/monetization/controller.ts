@@ -103,6 +103,7 @@ export class PurchaseController {
     const g = this.game();
     if (!p?.realMoney || this.status !== 'ready' || !this.priceOf(id)) return { status: 'unavailable', productId: id };
     if (p.ownership === 'once' && g.monetization.owns(id)) return { status: 'owned', productId: id };
+    if (!g.monetization.requirements(id).met) return { status: 'unavailable', productId: id };
     if (this.inFlight) return { status: 'busy', productId: id };
     this.inFlight = id;
     this.changed();

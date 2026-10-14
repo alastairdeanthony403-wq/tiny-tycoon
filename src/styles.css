@@ -418,3 +418,13 @@ html.reduce-motion *, html.reduce-motion *::before { animation-duration: 0.001s 
   .ps-tab { font-size: 0.68rem; }
   .ps-balance small { display: none; }
 }
+.ps-reqs { border: 2px dashed var(--line); border-radius: 14px; padding: 8px 12px; margin: 6px 0; }
+.ps-reqs ul { margin: 4px 0 0; padding-left: 4px; list-style: none; font-weight: 800; font-size: 0.85rem; }
+.ps-reqs li.met { color: var(--good-dark); }
+.ps-reqs li.unmet { color: var(--bad-dark); }
+.ps-reqs.all-met { border-color: var(--good); }
+.ps-theme-line { margin: 2px 2px 8px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}

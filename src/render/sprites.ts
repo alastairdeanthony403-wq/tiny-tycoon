@@ -2,6 +2,7 @@ import type { PlacedObject } from '../core/types';
 import { iso, shade } from './iso';
 import { box, ellipse, emoji, roundRect, badge, diamond } from './shapes';
 import { getProduct } from '../config/products';
+import type { ShopSkin } from './skins';
 import { OBJECT_MAP } from '../config/objects';
 
 const SHELF_TIERS = [
@@ -15,10 +16,10 @@ const CHECKOUT_TIERS = ['#8d99ae', '#4cc9f0', '#52b788', '#ffd166'];
 
 export interface ObjectDrawInfo {
   stockRatio: number;
-  /** Premium skin: golden shelves. */
-  gold?: boolean;
-  /** Premium skin: Neon Nights (emissive trims). */
-  neon?: boolean;
+  /** Active premium shop theme (visual only). */
+  skin?: ShopSkin | null;
+  /** Small animated sparkles allowed (false under reduced motion). */
+  sparkle?: boolean;
   closed?: boolean;
   producing?: boolean;
   powerOff?: boolean;
@@ -68,7 +69,34 @@ function productsOnTop(ctx: CanvasRenderingContext2D, o: PlacedObject, x0: numbe
   }
 }
 
+/** Thin outline of an object's footprint at height z (gold trims etc.). */
+function diamondOutline(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, z: number, color: string, width: number): void {
+  const a = iso(x, y, z);
+  const b = iso(x + w, y, z);
+  const c = iso(x + w, y + w, z);
+  const d = iso(x, y + w, z);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.lineTo(c.x, c.y);
+  ctx.lineTo(d.x, d.y);
+  ctx.closePath();
+  ctx.stroke();
+}
+
 export function drawObject(ctx: CanvasRenderingContext2D, o: PlacedObject, info: ObjectDrawInfo): void {
+  drawObjectBody(ctx, o, info);
+  // Theme trim around product displays other than shelves (shelves get a full frame above).
+  const trim = info.skin?.displayTrim;
+  if (trim && o.kind !== 'shelf' && OBJECT_MAP[o.kind]?.category === 'display') {
+    diamondOutline(ctx, o.x + 0.1, o.y + 0.1, 0.8, 1, trim, 2);
+    diamondOutline(ctx, o.x + 0.12, o.y + 0.12, 0.76, objectHeight(o) - 14, trim, 2);
+  }
+}
+
+function drawObjectBody(ctx: CanvasRenderingContext2D, o: PlacedObject, info: ObjectDrawInfo): void {
   const x = o.x;
   const y = o.y;
   const def = OBJECT_MAP[o.kind];
@@ -77,9 +105,24 @@ export function drawObject(ctx: CanvasRenderingContext2D, o: PlacedObject, info:
   switch (o.kind) {
     case 'shelf': {
       const base = SHELF_TIERS[Math.min(o.tier, 4)];
-      const t = info.gold ? { ...base, color: '#ffd166', trim: '#e09f00' } : info.neon ? { ...base, color: '#2b1055', trim: '#00f0ff' } : base;
+      const sk = info.skin?.shelf;
+      const t = sk ? { ...base, color: sk.color, trim: sk.trim } : base;
       box(ctx, x + 0.1, y + 0.1, x + 0.9, y + 0.9, t.h, t.color);
-      if (info.gold) {
+      if (sk?.rim) {
+        // gold frame: vertical posts on the visible corners + a rim around the top
+        ctx.strokeStyle = sk.rim;
+        ctx.lineWidth = 2.5;
+        for (const [px, py] of [[x + 0.1, y + 0.9], [x + 0.9, y + 0.9], [x + 0.9, y + 0.1]]) {
+          const a = iso(px, py, 0);
+          const b2 = iso(px, py, t.h);
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b2.x, b2.y);
+          ctx.stroke();
+        }
+        diamondOutline(ctx, x + 0.1, y + 0.1, 0.8, t.h, sk.rim, 2.5);
+      }
+      if (info.skin?.effect === 'golden' && info.sparkle) {
         const sp = iso(x + 0.5 + Math.sin(info.time * 2 + o.uid) * 0.3, y + 0.9, t.h * (0.5 + 0.4 * Math.sin(info.time * 3 + o.uid)));
         ctx.fillStyle = `rgba(255,255,255,${0.5 + 0.5 * Math.sin(info.time * 6 + o.uid)})`;
         ctx.beginPath();
@@ -174,8 +217,23 @@ export function drawObject(ctx: CanvasRenderingContext2D, o: PlacedObject, info:
       break;
     }
     case 'checkout': {
-      const color = CHECKOUT_TIERS[Math.min(o.tier, 3)];
+      const color = info.skin?.checkout?.color ?? CHECKOUT_TIERS[Math.min(o.tier, 3)];
       box(ctx, x + 0.08, y + 0.08, x + 0.92, y + 0.92, 20, color);
+      if (info.skin?.checkout) {
+        // warm accent strip along the visible faces of the counter
+        const acc = info.skin.checkout.accent;
+        ctx.strokeStyle = acc;
+        ctx.lineWidth = 3;
+        const p1 = iso(x + 0.08, y + 0.92, 13);
+        const p2 = iso(x + 0.92, y + 0.92, 13);
+        const p3 = iso(x + 0.92, y + 0.08, 13);
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.lineTo(p3.x, p3.y);
+        ctx.stroke();
+        diamondOutline(ctx, x + 0.08, y + 0.08, 0.84, 20, acc, 2);
+      }
       // conveyor belt
       diamond(ctx, x + 0.18, y + 0.18, 0.64, '#2b2d42', 20.5);
       const stripe = (info.time * 0.6) % 1;

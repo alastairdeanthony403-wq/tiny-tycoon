@@ -6,7 +6,7 @@
 
 export type PremiumProductId =
   | 'skin_neon_nights'
-  | 'skin_golden_shelves'
+  | 'cosmetic_golden_shelves'
   | 'bundle_staff_outfits'
   | 'bundle_seasonal_decorations'
   | 'gems_small'
@@ -45,6 +45,8 @@ export interface PremiumProduct {
   preview: { kind: 'skin' | 'outfit' | 'decor' | 'gems' | 'feature'; icon: string; swatch: string[] };
   /** 'once' = permanent, can't be owned twice. 'stackable' = consumable, can be bought repeatedly. */
   ownership: 'once' | 'stackable';
+  /** Progression gates (balancing config). All must be met to buy; ownership is never taken away. */
+  requires?: { level?: number; lifetimeRevenue?: number };
 }
 
 const sid = (id: string) => ({ ios: `com.tinytycoon.${id}`, android: `com.tinytycoon.${id}` });
@@ -65,18 +67,19 @@ export const PREMIUM_CATALOG: PremiumProduct[] = [
     ownership: 'once',
   },
   {
-    id: 'skin_golden_shelves',
+    // Permanent shop-theme cosmetic, Gems only (no real-money SKU). No gameplay effects.
+    id: 'cosmetic_golden_shelves',
     category: 'cosmetic',
-    featured: false,
+    featured: true,
     type: 'non_consumable',
-    storeIds: sid('skin_golden_shelves'),
+    storeIds: sid('cosmetic_golden_shelves'),
     grant: { kind: 'skin', skin: 'golden_shelves' },
-    gemPrice: 250,
-    realMoney: true,
-    devPrice: { amount: 1.99, currency: 'GBP' },
-    contents: ['premium.contents.gold_shelves', 'premium.contents.gold_sparkle'],
-    preview: { kind: 'skin', icon: '✨', swatch: ['#ffd166', '#ff9f1c', '#fff3c4'] },
+    gemPrice: 200,
+    realMoney: false,
+    contents: ['premium.contents.gold_shelves', 'premium.contents.gold_trim', 'premium.contents.gold_counters', 'premium.contents.gold_signage', 'premium.contents.gold_uniforms'],
+    preview: { kind: 'skin', icon: '✨', swatch: ['#3b2412', '#c8891e', '#ffd166', '#fff3d6'] },
     ownership: 'once',
+    requires: { level: 15, lifetimeRevenue: 25000 },
   },
   {
     id: 'bundle_staff_outfits',
@@ -176,6 +179,9 @@ export const PREMIUM_CATALOG: PremiumProduct[] = [
 ];
 
 export const PREMIUM_MAP: Record<PremiumProductId, PremiumProduct> = Object.fromEntries(PREMIUM_CATALOG.map((p) => [p.id, p])) as Record<PremiumProductId, PremiumProduct>;
+
+/** Ids renamed before release → current id. Saves holding an old id are mapped on load. */
+export const LEGACY_PRODUCT_IDS: Record<string, PremiumProductId> = { skin_golden_shelves: 'cosmetic_golden_shelves' };
 
 export function productByStoreId(storeId: string): PremiumProduct | undefined {
   return PREMIUM_CATALOG.find((p) => p.storeIds.ios === storeId || p.storeIds.android === storeId);

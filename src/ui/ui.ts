@@ -712,6 +712,8 @@ export class UIManager implements AppApi {
         if (e.productId === 'bundle_seasonal_decorations') this.panels.get('shop')?.refresh(true);
       }),
       b.on('premiumRevoked', () => this.premium.render()),
+      // Keep prices, shortfalls and lock states current if Gems change while the store is open.
+      b.on('gemsChanged', () => this.premium.render()),
       b.on('error', (e) => {
         if (this.debug) this.toast(`[${e.where}] ${e.message.slice(0, 80)}`, '🐞', 'bad');
       }),
