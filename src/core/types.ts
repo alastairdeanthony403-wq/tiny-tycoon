@@ -1,7 +1,7 @@
 /** Serializable game state. Runtime-only data (NPC positions etc.) lives in sim/world.ts. */
 import type { StaffType } from '../config/staff';
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 export type Dir = 0 | 1 | 2 | 3; // 0:+x 1:+y 2:-x 3:-y
 
@@ -109,6 +109,8 @@ export interface Stats {
   angryCustomers: number;
   staffEverHired: number;
   taps: number;
+  dailyMissionsClaimed: number;
+  weeklyMissionsClaimed: number;
   soldByCategory: Record<string, number>;
 }
 
@@ -126,6 +128,8 @@ export interface SettingsState {
   reduceFlashing: boolean;
   screenShake: boolean;
   graphics: 'low' | 'high';
+  /** Opt-in for sending anonymous analytics to a configured provider (off by default). */
+  analyticsConsent: boolean;
 }
 
 export interface ActiveEvent {
@@ -188,6 +192,37 @@ export interface MonetizationState {
   nextLedgerId: number;
 }
 
+/** One issued daily/weekly mission: progress = stat gained since `base`. */
+export interface MissionProgress {
+  id: string;
+  stat: string;
+  base: number;
+  target: number;
+  money: number;
+  xp: number;
+  gems: number;
+  completed: boolean;
+  claimed: boolean;
+}
+
+export interface MissionsState {
+  /** UTC date (YYYY-MM-DD) the daily set was issued for. */
+  dailyKey: string;
+  /** UTC date of the Monday that starts the weekly set. */
+  weeklyKey: string;
+  daily: MissionProgress[];
+  weekly: MissionProgress[];
+}
+
+/** Rewarded-ad offers: cooldowns, daily caps and the active timed boost. */
+export interface AdsState {
+  dayKey: string;
+  watchedToday: number;
+  lastWatchedAt: number;
+  boostRemaining: number;
+  processed: string[];
+}
+
 export interface GameState {
   version: number;
   player: PlayerState;
@@ -197,6 +232,8 @@ export interface GameState {
   perks: Record<string, number>;
   cosmetics: { theme: string; unlockedThemes: string[] };
   monetization: MonetizationState;
+  missions: MissionsState;
+  ads: AdsState;
   settings: SettingsState;
   stats: Stats;
   events: EventsState;

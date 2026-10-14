@@ -22,7 +22,8 @@ export class OfflineManager {
   compute(now: number): { seconds: number; amount: number } | null {
     const g = this.game;
     const st = g.state;
-    const rate = Math.max(g.economy.incomeRate(), g.shop.incomeRate) + g.locations.passiveIncome();
+    // The temporary ad boost never carries into offline earnings.
+    const rate = Math.max(g.economy.incomeRate(), g.shop.incomeRate) / g.ads.priceMult() + g.locations.passiveIncome();
     const res = computeOffline({ lastSave: st.timestamps.lastSave, now, ratePerSec: rate, efficiency: g.mods.offlineEfficiency(), capSeconds: g.mods.offlineCapSeconds() });
     // Always move the timestamp forward (or back, on clock rollback) so it can't be re-used.
     st.timestamps.lastSave = now;

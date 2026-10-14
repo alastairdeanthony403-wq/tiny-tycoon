@@ -3,7 +3,7 @@ import { EXPANSIONS } from '../config/expansions';
 import { LOCATION_MAP } from '../config/locations';
 import { DEPARTMENT_MAP } from '../config/departments';
 import { MAIN_QUESTS } from '../config/quests';
-import type { GameState, MonetizationState, PlacedObject, SettingsState, ShopState, Stats } from './types';
+import type { AdsState, GameState, MissionsState, MonetizationState, PlacedObject, SettingsState, ShopState, Stats } from './types';
 import { SAVE_VERSION } from './types';
 
 /** Fixed landmark tiles (never buildable). */
@@ -25,6 +25,7 @@ export function defaultSettings(): SettingsState {
     reduceFlashing: false,
     screenShake: true,
     graphics: 'high',
+    analyticsConsent: false,
   };
 }
 
@@ -44,6 +45,14 @@ export function defaultMonetization(): MonetizationState {
   };
 }
 
+export function defaultMissions(): MissionsState {
+  return { dailyKey: '', weeklyKey: '', daily: [], weekly: [] };
+}
+
+export function defaultAds(): AdsState {
+  return { dayKey: '', watchedToday: 0, lastWatchedAt: 0, boostRemaining: 0, processed: [] };
+}
+
 export function defaultStats(): Stats {
   return {
     customersServed: 0,
@@ -58,6 +67,8 @@ export function defaultStats(): Stats {
     angryCustomers: 0,
     staffEverHired: 0,
     taps: 0,
+    dailyMissionsClaimed: 0,
+    weeklyMissionsClaimed: 0,
     soldByCategory: {},
   };
 }
@@ -139,6 +150,8 @@ export function createInitialState(now = Date.now(), seed = Math.floor(Math.rand
     monetization: defaultMonetization(),
     settings: defaultSettings(),
     stats: defaultStats(),
+    missions: defaultMissions(),
+    ads: defaultAds(),
     events: { active: [], nextRollIn: ECONOMY.events.firstDelay },
     timestamps: { created: now, lastSave: now, lastWage: 0 },
     incomeBuckets: [],

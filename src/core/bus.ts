@@ -31,6 +31,12 @@ export interface GameEvents {
   milestone: { id: string };
   achievementUnlocked: { id: string };
   achievementClaimed: { id: string; stars: number };
+  tutorialCompleted: { skipped: boolean };
+  missionsReset: { kind: 'daily' | 'weekly' };
+  missionCompleted: { kind: 'daily' | 'weekly'; id: string };
+  missionClaimed: { kind: 'daily' | 'weekly'; id: string; money: number; xp: number; gems: number };
+  adBoostStarted: { seconds: number };
+  adBoostEnded: Record<string, never>;
   eventOffered: { id: string };
   eventStarted: { id: string; duration: number };
   eventEnded: { id: string; summary?: RushSummary };

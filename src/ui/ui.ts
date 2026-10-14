@@ -166,6 +166,14 @@ export class UIManager implements AppApi {
     this.menus.achievementsFromGame();
   }
 
+  openMissions(): void {
+    this.menus.missionsFromGame();
+  }
+
+  skipTutorial(): void {
+    this.confirm({ icon: '⏭️', title: t('tut.skip'), text: t('tut.skip_confirm'), okLabel: t('tut.skip'), onOk: () => this.hooks.skipTutorial() });
+  }
+
   openPanel(id: string | null): void {
     if (id && this.placement) this.cancelPlacement();
     this.activePanel = id;
@@ -712,6 +720,22 @@ export class UIManager implements AppApi {
         if (e.productId === 'bundle_seasonal_decorations') this.panels.get('shop')?.refresh(true);
       }),
       b.on('premiumRevoked', () => this.premium.render()),
+      b.on('tutorialCompleted', (e) => {
+        const next = this.game.quests.currentMain();
+        const nextText = next?.def ? t(`quest.${next.id}`, { n: next.target }) : '';
+        this.popups.push({
+          icon: e.skipped ? '⏭️' : '🎓',
+          title: t(e.skipped ? 'popup.tutorial_skipped' : 'popup.tutorial_done'),
+          body: el('div', {}, el('p', {}, t('popup.tutorial_done_body')), nextText ? el('p', {}, el('b', {}, `${t('popup.next_goal')}: `), nextText) : null),
+          kind: 'gold',
+          buttons: [{ label: t('popup.lets_go'), primary: true }],
+        });
+      }),
+      b.on('missionCompleted', (e) => {
+        this.sfx('coin');
+        this.toast(t(e.kind === 'daily' ? 'toast.daily_done' : 'toast.weekly_done'), '📅', 'good');
+      }),
+      b.on('adBoostEnded', () => this.toast(t('ads.ended'), '🚀', 'info')),
       // Keep prices, shortfalls and lock states current if Gems change while the store is open.
       b.on('gemsChanged', () => this.premium.render()),
       b.on('error', (e) => {

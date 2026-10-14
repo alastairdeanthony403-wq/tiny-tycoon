@@ -51,13 +51,13 @@ updates listener ─► refunded/revoked ─► revoke entitlement / claw back u
 ## 2. Catalog (`src/monetization/catalog.ts`)
 
 Internal ids are permanent once released (they're in saves, ledgers and the backend).
-`LEGACY_PRODUCT_IDS` maps pre-release ids found in saves (e.g. `skin_golden_shelves` → `cosmetic_golden_shelves`) when a save is loaded.
+`LEGACY_PRODUCT_IDS` maps pre-release ids found in saves (`skin_golden_shelves` → `cosmetic_golden_shelves`, `skin_neon_nights` → `cosmetic_neon_nights`) when a save is loaded.
 
 Products may declare `requires: { level?, lifetimeRevenue? }`. `MonetizationManager.requirements(id)` reports each gate, `buyWithGems` refuses with `locked` until all are met, and the Premium Shop lists unmet requirements with the player's progress. Shop themes are defined as data in `src/render/skins.ts` (palette, shelf, display trim, checkout, sign, uniform, effect), so further themes only need a skin entry plus a catalog entry.
 
 | Internal id | Type | Grant | Gem price | Dev sample price* | Store id (iOS = Android) |
 |---|---|---|---|---|---|
-| skin_neon_nights | non-consumable | Neon Nights shop skin | 400 | £2.99 | com.tinytycoon.skin_neon_nights |
+| cosmetic_neon_nights | non-consumable | Neon Nights shop theme. Requires level 10 and £2,500 lifetime revenue | 150 | £2.99 | com.tinytycoon.cosmetic_neon_nights |
 | cosmetic_golden_shelves | non-consumable | Golden Shelves shop theme (gold shelf frames, display trim, checkout accents, signage, uniforms). Requires level 15 and £25,000 lifetime revenue | 200 | — (Gems only, `realMoney: false`; not sold through the app stores) | com.tinytycoon.cosmetic_golden_shelves (reserved, not registered) |
 | bundle_staff_outfits | non-consumable | Smart Suits + Retro Diner outfits | 200 | £1.99 | com.tinytycoon.bundle_staff_outfits |
 | bundle_seasonal_decorations | non-consumable | Snowman, pumpkin lantern, fairy lights (placeable decor) | 200 | £1.99 | com.tinytycoon.bundle_seasonal_decorations |
@@ -159,3 +159,13 @@ and refuses to grant anything when it is not.
   layouts, auto-restock, persistence and v2 → v3 migration (all against the simulator).
 * Browser QA (Playwright) drove the store UI at 390×844 and 320×568 with the test store build.
 * **Not tested:** anything native (StoreKit, Play Billing), the backend, real sandbox transactions.
+
+## 9. Optional rewarded ads
+
+- Rules: `src/sim/ads.ts` (config in `src/config/ads.ts`): +50% sale prices for 5 minutes, max 4/day
+  (UTC), 30-minute cooldown, each `completionId` rewarded once, excluded from offline earnings.
+- Adapter: `src/ads/` — `RewardedAdProvider` with `NoAdProvider` (production default: offer hidden),
+  `SimulatedAdProvider` (dev / `VITE_SIMULATED_ADS=1`, labelled "Development simulation"), and
+  `NativeAdBridgeProvider` (`window.TinyTycoonAds`). The reward is granted only for a provider-confirmed
+  completion; skipped/failed/unavailable ads grant nothing and never block play.
+- Not live: no ad network is integrated. See [LAUNCH.md](LAUNCH.md).

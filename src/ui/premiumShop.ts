@@ -44,6 +44,7 @@ export class PremiumShop {
     this.tab = tab;
     this.detail = null;
     toggle(this.el, 'hidden', false);
+    this.app.game.analytics('premium_shop_opened', { tab });
     const s = this.store();
     if (s.status === 'idle' || s.status === 'error' || s.status === 'offline') void s.init();
     this.render();
@@ -63,6 +64,8 @@ export class PremiumShop {
     if (this.store().testMode) this.body.append(el('div', { class: 'test-banner', role: 'note' }, `🧪 ${t('premium.test_banner')}`));
     const statusNote = this.statusNote();
     if (statusNote) this.body.append(statusNote);
+    const flags = this.app.game.state.progression.flags;
+    if (!flags.viewedCosmetics && (this.tab === 'cosmetic' || this.tab === 'featured' || (this.detail && PREMIUM_MAP[this.detail].category === 'cosmetic'))) flags.viewedCosmetics = true;
     if (this.detail) this.body.append(this.detailView(PREMIUM_MAP[this.detail]));
     else {
       this.body.append(this.tabs());
@@ -226,7 +229,7 @@ export class PremiumShop {
       if (p.grant.kind === 'skin') {
         const skin = p.grant.skin;
         const on = g.state.monetization.equipped.skin === skin;
-        actions.append(el('button', { class: `btn ${on ? 'btn-ghost' : 'btn-primary'}`, onclick: () => { m.equipSkin(on ? null : skin); this.app.sfx('pop'); this.render(); } }, on ? t('premium.unequip') : t('premium.equip')));
+        actions.append(el('button', { class: `btn ${on ? 'btn-ghost' : 'btn-primary'}`, onclick: () => { if (m.equipSkin(on ? null : skin)) g.analytics('cosmetic_equipped', { skin: on ? null : skin }); this.app.sfx('pop'); this.render(); } }, on ? t('premium.unequip') : t('premium.equip')));
       } else if (p.grant.kind === 'outfits') {
         const row = el('div', { class: 'product-picker', role: 'radiogroup', 'aria-label': t('premium.outfit') });
         for (const o of [null, ...p.grant.outfits]) {
@@ -325,6 +328,7 @@ export class PremiumShop {
   // -------------------------------------------------------------- previews
 
   private startPreview(p: PremiumProduct): void {
+    this.app.game.analytics('cosmetic_previewed', { product: p.id });
     const r = this.renderer;
     r.preview = p.grant.kind === 'skin' ? { skin: p.grant.skin } : p.grant.kind === 'outfits' ? { outfit: p.grant.outfits[0] } : null;
     this.close();
@@ -370,7 +374,9 @@ export class PremiumShop {
       text: t('premium.confirm_gems', { price: p.gemPrice, after: m.gems - p.gemPrice }),
       okLabel: t('premium.confirm_spend', { price: p.gemPrice }),
       onOk: guarded(`gems-${p.id}`, () => {
+        this.app.game.analytics('purchase_initiated', { product: p.id, currency: 'gems' });
         const r = m.buyWithGems(p.id);
+        this.app.game.analytics('purchase_result', { product: p.id, currency: 'gems', result: r.ok ? 'success' : r.reason });
         if (r.ok) {
           this.app.sfx('upgrade');
           this.app.toast(t('premium.success', { name: t(`premium.${p.id}.name`) }), '🎉', 'gold');
@@ -395,7 +401,9 @@ export class PremiumShop {
       okLabel: s.testMode ? t('premium.confirm_test_ok', { price: price.displayPrice }) : t('premium.confirm_pay', { price: price.displayPrice }),
       onOk: guarded(`money-${p.id}`, async () => {
         this.render();
+        this.app.game.analytics('purchase_initiated', { product: p.id, currency: 'store', test: s.testMode });
         const r = await s.purchase(p.id);
+        this.app.game.analytics('purchase_result', { product: p.id, currency: 'store', result: r.status, test: s.testMode });
         this.reportOutcome(r);
         this.render();
       }),

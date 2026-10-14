@@ -54,7 +54,8 @@ export class Modifiers {
       (1 + this.franchiseBonus()) *
       (1 + this.achievementBonus()) *
       this.location.spendMult *
-      this.eventEffect('priceMult')
+      this.eventEffect('priceMult') *
+      (this.game.ads?.priceMult() ?? 1)
     );
   }
 

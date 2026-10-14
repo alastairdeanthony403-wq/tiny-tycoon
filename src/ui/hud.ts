@@ -8,6 +8,8 @@ import { t } from '../core/i18n';
 import { EVENT_MAP } from '../config/events';
 import { QuestManager } from '../sim/quests';
 import { getProduct } from '../config/products';
+import { ADS } from '../config/ads';
+import { formatDuration } from '../core/format';
 
 /** Top HUD: money, stars, level/XP, reputation, quests and the event banner. */
 export class Hud {
@@ -23,6 +25,7 @@ export class Hud {
   private questKey = '';
   private questUpdaters: (() => void)[] = [];
   private eventBox: HTMLElement;
+  private boostEl: HTMLElement;
   private eventKey = '';
   private eventTimer: TimerDisplay | null = null;
   questsCollapsed = loadCollapsed();
@@ -44,6 +47,7 @@ export class Hud {
     const levelBox = el('div', { class: 'level-box', 'aria-label': t('hud.level') }, el('span', { class: 'lvl-badge' }, '⭐', this.lvl), this.xp.el);
     this.quests = el('div', { class: 'quests' });
     this.eventBox = el('div', { class: 'event-box' });
+    this.boostEl = el('div', { class: 'boost-chip hidden', role: 'status' });
     this.el = el(
       'div',
       { class: 'hud' },
@@ -54,9 +58,9 @@ export class Hud {
         this.stars.el,
         this.gems.el,
         levelBox,
-        el('div', { class: 'hud-right' }, this.shopLvl, this.rep, onDebug ? el('button', { class: 'icon-btn', 'aria-label': 'Debug', onclick: onDebug }, '🐞') : null, el('button', { class: 'icon-btn', 'aria-label': t('menu.pause'), onclick: onMenu }, '⏸')),
+        el('div', { class: 'hud-right' }, this.shopLvl, this.rep, onDebug ? el('button', { class: 'icon-btn', 'aria-label': 'Debug', onclick: onDebug }, '🐞') : null, el('button', { class: 'icon-btn', 'data-tut': 'pause', 'aria-label': t('menu.pause'), onclick: onMenu }, '⏸')),
       ),
-      el('div', { class: 'hud-left' }, this.quests, this.eventBox),
+      el('div', { class: 'hud-left' }, this.quests, this.boostEl, this.eventBox),
     );
   }
 
@@ -79,6 +83,9 @@ export class Hud {
     setText(this.shopLvl, `🏪 ${g.shop.size}×${g.shop.size}`);
     this.updateQuests();
     this.updateEvents();
+    const boost = g.state.ads.boostRemaining;
+    toggle(this.boostEl, 'hidden', boost <= 0);
+    if (boost > 0) setText(this.boostEl, `🚀 ${t('ads.boost_chip', { pct: Math.round((ADS.boostPriceMult - 1) * 100), time: formatDuration(Math.ceil(boost)) })}`);
   }
 
   private questText(id: string, target: number, side?: string): string {
@@ -95,7 +102,9 @@ export class Hud {
     const main = views.find((v) => v.main) ?? views[0];
     const others = views.filter((v) => v !== main);
     const level = g.state.player.level;
-    const key = views.map((v) => `${v.id}:${v.progress.completed}`).join('|') + `|${this.questsCollapsed}|${level}`;
+    const missionsReady = g.missions.available ? g.missions.unclaimedCount() : 0;
+    const tutDone = g.state.progression.tutorialDone;
+    const key = views.map((v) => `${v.id}:${v.progress.completed}`).join('|') + `|${this.questsCollapsed}|${level}|${missionsReady}|${tutDone}|${g.missions.available}`;
     if (key !== this.questKey) {
       this.questKey = key;
       this.questUpdaters = [];
@@ -120,11 +129,17 @@ export class Hud {
         el('span', { class: 'quest-chevron', 'aria-hidden': 'true' }, this.questsCollapsed ? '▸' : '▾'),
       );
       const list = el('div', { id: 'quest-list', class: 'quest-list' });
-      this.quests.append(head, list);
+      const missionsBtn = g.missions.available
+        ? el('button', { class: 'quest-missions', 'data-tut': 'missions', 'aria-label': t('missions.title'), title: t('missions.title'), onclick: () => { this.app.sfx('click'); this.app.openMissions(); } }, '📅', missionsReady ? el('span', { class: 'quest-ready' }, `🎁 ${missionsReady}`) : null)
+        : null;
+      this.quests.append(el('div', { class: 'quest-head-row' }, head, missionsBtn), list);
       toggle(this.quests, 'collapsed', this.questsCollapsed);
       // Collapsed: only the main goal (title + progress + claim). Expanded: main goal, side goals, next level preview.
       const shown = main ? (this.questsCollapsed ? [main] : [main, ...others]) : [];
       for (const v of shown) list.append(this.questNode(v, this.questsCollapsed));
+      if (!this.questsCollapsed && !tutDone) {
+        list.append(el('button', { class: 'link-btn', 'data-tut': 'skip-tutorial', onclick: () => this.app.skipTutorial() }, `⏭️ ${t('tut.skip')}`));
+      }
       if (!this.questsCollapsed) {
         const next = g.progression.unlocksAt(level + 1);
         if (next.length) {

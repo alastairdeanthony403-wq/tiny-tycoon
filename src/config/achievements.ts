@@ -26,6 +26,15 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'decorator', icon: '🪴', check: 'decorCount', target: 8, stars: 3, unlockTheme: 'jungle' },
   { id: 'five_star', icon: '🌟', check: 'repTier', target: 5, stars: 8, title: 'legend' },
   { id: 'franchisee', icon: '🏢', check: 'prestigeCount', target: 1, stars: 5, unlockTheme: 'neon' },
+  { id: 'graduate', icon: '🎓', check: 'tutorialDone', target: 1, stars: 1 },
+  { id: 'first_upgrade', icon: '⬆️', check: 'upgradesBought', target: 1, stars: 1 },
+  { id: 'new_aisle', icon: '🥤', check: 'departments', target: 2, stars: 2 },
+  { id: 'growing_shop', icon: '🏪', check: 'stage', target: 2, stars: 2 },
+  { id: 'on_a_mission', icon: '📅', check: 'stat', arg: 'dailyMissionsClaimed', target: 1, stars: 1 },
+  { id: 'mission_regular', icon: '🗓️', check: 'stat', arg: 'weeklyMissionsClaimed', target: 3, stars: 3 },
+  { id: 'stylish', icon: '🎨', check: 'premiumThemesOwned', target: 1, stars: 2 },
+  { id: 'theme_collector', icon: '🌈', check: 'premiumThemesOwned', target: 2, stars: 4 },
+  { id: 'big_earner', icon: '🏦', check: 'lifetimeRevenue', target: 100000, stars: 5 },
   { id: 'retail_empire', icon: '👑', check: 'locationsOwned', target: 5, stars: 15, title: 'tycoon' },
 ];
 

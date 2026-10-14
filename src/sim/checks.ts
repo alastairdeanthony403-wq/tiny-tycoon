@@ -24,6 +24,9 @@ export const CHECKS: Record<string, (g: Game, arg?: string) => number> = {
   repTier: (g) => g.progression.repTier(),
   locationsOwned: (g) => g.state.progression.unlockedLocations.length,
   prestigeCount: (g) => g.state.player.prestigeCount,
+  tutorialDone: (g) => (g.state.progression.tutorialDone ? 1 : 0),
+  upgradesBought: (g) => g.state.stats.upgradesBought,
+  premiumThemesOwned: (g) => ['cosmetic_neon_nights', 'cosmetic_golden_shelves'].filter((id) => g.state.monetization.entitlements[id]).length,
   flag: (g, f) => (f && g.state.progression.flags[f] ? 1 : 0),
   stat: (g, s) => statValue(g, s ?? ''),
 };

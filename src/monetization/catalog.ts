@@ -5,7 +5,7 @@
  */
 
 export type PremiumProductId =
-  | 'skin_neon_nights'
+  | 'cosmetic_neon_nights'
   | 'cosmetic_golden_shelves'
   | 'bundle_staff_outfits'
   | 'bundle_seasonal_decorations'
@@ -53,18 +53,19 @@ const sid = (id: string) => ({ ios: `com.tinytycoon.${id}`, android: `com.tinyty
 
 export const PREMIUM_CATALOG: PremiumProduct[] = [
   {
-    id: 'skin_neon_nights',
+    id: 'cosmetic_neon_nights',
     category: 'cosmetic',
     featured: true,
     type: 'non_consumable',
-    storeIds: sid('skin_neon_nights'),
+    storeIds: sid('cosmetic_neon_nights'),
     grant: { kind: 'skin', skin: 'neon_nights' },
-    gemPrice: 400,
+    gemPrice: 150,
     realMoney: true,
     devPrice: { amount: 2.99, currency: 'GBP' },
     contents: ['premium.contents.neon_palette', 'premium.contents.neon_signs', 'premium.contents.neon_windows'],
     preview: { kind: 'skin', icon: '🌃', swatch: ['#1a1033', '#ff2bd6', '#00f0ff'] },
     ownership: 'once',
+    requires: { level: 10, lifetimeRevenue: 2500 },
   },
   {
     // Permanent shop-theme cosmetic, Gems only (no real-money SKU). No gameplay effects.
@@ -181,7 +182,7 @@ export const PREMIUM_CATALOG: PremiumProduct[] = [
 export const PREMIUM_MAP: Record<PremiumProductId, PremiumProduct> = Object.fromEntries(PREMIUM_CATALOG.map((p) => [p.id, p])) as Record<PremiumProductId, PremiumProduct>;
 
 /** Ids renamed before release → current id. Saves holding an old id are mapped on load. */
-export const LEGACY_PRODUCT_IDS: Record<string, PremiumProductId> = { skin_golden_shelves: 'cosmetic_golden_shelves' };
+export const LEGACY_PRODUCT_IDS: Record<string, PremiumProductId> = { skin_golden_shelves: 'cosmetic_golden_shelves', skin_neon_nights: 'cosmetic_neon_nights' };
 
 export function productByStoreId(storeId: string): PremiumProduct | undefined {
   return PREMIUM_CATALOG.find((p) => p.storeIds.ios === storeId || p.storeIds.android === storeId);

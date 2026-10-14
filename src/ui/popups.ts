@@ -72,6 +72,8 @@ export class Popups {
       el('div', { class: 'modal-buttons' }, ...btns),
     );
     this.el.append(box);
+    // Confirmations can be opened from full-screen menus (New Game, Reset, Skip tutorial): show them on top.
+    this.el.classList.toggle('over-menus', p.kind === 'confirm');
     this.el.classList.remove('hidden');
     this.onOpenChange(true, p);
     setTimeout(() => (btns[0] as HTMLButtonElement | undefined)?.focus(), 50);

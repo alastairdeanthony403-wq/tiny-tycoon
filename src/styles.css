@@ -428,3 +428,35 @@ html.reduce-motion *, html.reduce-motion *::before { animation-duration: 0.001s 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
+
+/* Missions, tutorial skip, ad boost, help */
+.quest-head-row { display: flex; align-items: center; gap: 4px; }
+.quest-head-row .quest-head { flex: 1; min-width: 0; }
+.quest-missions { display: inline-flex; align-items: center; gap: 4px; min-width: 44px; min-height: 40px; border: 0; border-radius: 12px; background: var(--card-2); font-size: 1.05rem; font-weight: 900; cursor: pointer; padding: 0 8px; }
+.quest-missions:focus-visible, .link-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.link-btn { border: 0; background: none; color: var(--ink-soft); font-weight: 800; font-size: 0.8rem; text-decoration: underline; padding: 8px 2px; min-height: 36px; cursor: pointer; text-align: left; }
+.boost-chip { background: linear-gradient(90deg, #ffe066, #ffb703); color: #4a3200; border-radius: 999px; padding: 4px 10px; font-weight: 900; font-size: 0.8rem; box-shadow: var(--shadow); align-self: flex-start; }
+.mission .ach-head b { overflow-wrap: anywhere; }
+.ad-offer { margin-top: 10px; }
+.ad-card .test-banner.small { font-size: 0.7rem; padding: 3px 8px; margin-top: 4px; }
+.help-list { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 8px; line-height: 1.35; }
+.help-list li { padding-left: 2px; }
+
+/* HUD row never overflows: the pause/menu buttons keep their size and stay tappable;
+   pills shrink (the level box clips its XP label) instead of sliding underneath them. */
+.hud-top > * { min-width: 0; }
+.hud-right { flex-shrink: 0; position: relative; z-index: 1; }
+.level-box { overflow: hidden; }
+.level-box .pb-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 360px) {
+  .hud-top { gap: 3px; }
+  .cur-value { font-size: 1rem; }
+  .cur-icon { font-size: 1rem; }
+  .currency { padding: 3px 6px 3px 3px; gap: 4px; }
+  .level-box { padding: 3px 4px 3px 3px; gap: 3px; }
+}
+
+.modal-layer.over-menus { z-index: 40; }
+.ad-card { flex-wrap: wrap; }
+.ad-card .card-main { flex: 1 1 170px; }
+.ad-card > .btn { flex: 1 1 100%; }

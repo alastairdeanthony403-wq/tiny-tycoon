@@ -1,7 +1,7 @@
 import type { AppApi } from './api';
 import type { Renderer } from '../render/renderer';
 import { el, setText, toggle } from './dom';
-import { t } from '../core/i18n';
+import { t, hasKey } from '../core/i18n';
 
 /**
  * Contextual tutorial: points a bouncing finger at the next thing to tap, driven by the
@@ -35,9 +35,15 @@ export class Tutorial {
     r.highlightUid = 0;
     r.highlightSign = false;
     r.highlightExpansion = false;
+    const flags = g.state.progression.flags;
+    // Skipped / hidden: no pointer or bubbles at all ("How to play" can turn tips back on).
+    if (flags.tutorialHidden) {
+      toggle(this.el, 'hidden', true);
+      return;
+    }
     const hint = q && !q.progress.completed ? q.def?.hint : undefined;
-    // Only guide during the tutorial (and lightly afterwards for nav hints).
-    const showText = !!q && !g.state.progression.tutorialDone;
+    // Only guide during the tutorial (and lightly afterwards for nav hints, or when tips were replayed).
+    const showText = !!q && (!g.state.progression.tutorialDone || !!flags.tipsReplay) && (q.progress.completed || hasKey(`tut.${q.id}`));
     let target: { x: number; y: number } | null = null;
     let elTarget: HTMLElement | null = null;
     const ui = this.ui;
@@ -67,6 +73,10 @@ export class Tutorial {
         r.highlightExpansion = true;
         target = r.screenOfExpansion();
       }
+    } else if (hint === 'pauseMenu') {
+      elTarget = this.dom('.hud-right .icon-btn[data-tut="pause"]');
+    } else if (hint === 'gems') {
+      elTarget = this.dom('.gem-pill');
     } else if (hint?.startsWith('nav:')) {
       const panel = hint.slice(4);
       if (ui.activePanel === panel) {

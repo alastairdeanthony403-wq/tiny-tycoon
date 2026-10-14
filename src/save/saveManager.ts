@@ -2,7 +2,7 @@ import type { GameState } from '../core/types';
 import { SAVE_VERSION } from '../core/types';
 import { createInitialState, createShop, defaultMonetization, defaultSettings, defaultStats } from '../core/state';
 import { PREMIUM_MAP, MAX_GEMS, LEGACY_PRODUCT_IDS } from '../monetization/catalog';
-import type { MonetizationState } from '../core/types';
+import type { AdsState, MissionsState, MonetizationState } from '../core/types';
 import { ECONOMY } from '../config/economy';
 import { OBJECT_MAP } from '../config/objects';
 import { PRODUCT_MAP } from '../config/products';
@@ -32,6 +32,8 @@ export class MemoryStore implements KeyValueStore {
 
 export const SAVE_KEY = 'tinytycoon.save';
 export const BACKUP_KEY = 'tinytycoon.save.bak';
+/** Damaged saves are copied here (never deleted silently) before a backup or new game replaces them. */
+export const DAMAGED_KEY = 'tinytycoon.save.damaged';
 
 interface SaveEnvelope {
   version: number;
@@ -70,6 +72,13 @@ export const MIGRATIONS: Record<number, Migration> = {
   // v2 → v3: premium store (Gems, entitlements, ledger, layouts). Existing progress is untouched.
   2: (s) => {
     s.monetization ??= defaultMonetization();
+    return s;
+  },
+  // v3 → v4: daily/weekly missions and rewarded-ad state (defaults are filled by validate);
+  // two onboarding steps were inserted into the main chain after "hire_1" (old index 9).
+  3: (s) => {
+    const prog = s.progression;
+    if (prog && typeof prog.mainQuestIndex === 'number' && prog.mainQuestIndex >= 10) prog.mainQuestIndex += 2;
     return s;
   },
 };
@@ -165,6 +174,7 @@ export function validate(raw: any, now = Date.now()): GameState {
     reduceFlashing: bool(set.reduceFlashing, false),
     screenShake: bool(set.screenShake, true),
     graphics: set.graphics === 'low' ? 'low' : 'high',
+    analyticsConsent: bool(set.analyticsConsent, false),
   };
   const stats = obj(r.stats);
   const ds2 = defaultStats();
@@ -174,6 +184,8 @@ export function validate(raw: any, now = Date.now()): GameState {
     (st.stats as any)[k] = num(stats[k], 0);
   }
   st.stats.soldByCategory = Object.fromEntries(Object.entries(obj(stats.soldByCategory)).map(([k, v]) => [k, num(v, 0)]));
+  st.missions = validateMissions(r.missions);
+  st.ads = validateAds(r.ads);
   const ev = obj(r.events);
   st.events = {
     active: arr<any>(ev.active).filter((e) => e && typeof e.id === 'string').map((e) => ({ id: e.id, remaining: num(e.remaining, 0, 0, 600), duration: num(e.duration, 1, 1, 600), served: num(e.served, 0), lost: num(e.lost, 0), earned: num(e.earned, 0) })),
@@ -186,6 +198,29 @@ export function validate(raw: any, now = Date.now()): GameState {
   st.incomeBuckets = arr<number>(r.incomeBuckets).map((v) => num(v, 0)).slice(-30);
   st.rngSeed = Math.floor(num(r.rngSeed, 1, 0, 2 ** 31));
   return st;
+}
+
+const dateKey = (v: unknown) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '');
+
+function validateMissions(raw: unknown): MissionsState {
+  const m = obj(raw);
+  const list = (v: unknown) =>
+    arr<any>(v)
+      .filter((x) => x && typeof x.id === 'string' && typeof x.stat === 'string')
+      .slice(0, 6)
+      .map((x) => ({ id: x.id, stat: x.stat, base: num(x.base, 0), target: Math.max(1, Math.floor(num(x.target, 1, 1))), money: num(x.money, 0), xp: Math.floor(num(x.xp, 0, 0, 1e6)), gems: Math.floor(num(x.gems, 0, 0, 100)), completed: bool(x.completed, false), claimed: bool(x.claimed, false) }));
+  return { dailyKey: dateKey(m.dailyKey), weeklyKey: dateKey(m.weeklyKey), daily: list(m.daily), weekly: list(m.weekly) };
+}
+
+function validateAds(raw: unknown): AdsState {
+  const a = obj(raw);
+  return {
+    dayKey: dateKey(a.dayKey),
+    watchedToday: Math.floor(num(a.watchedToday, 0, 0, 100)),
+    lastWatchedAt: num(a.lastWatchedAt, 0, 0, 1e15),
+    boostRemaining: num(a.boostRemaining, 0, 0, 3600),
+    processed: arr<string>(a.processed).filter((x) => typeof x === 'string').slice(-200),
+  };
 }
 
 const gemInt = (v: unknown) => (typeof v === 'number' && Number.isSafeInteger(v) ? Math.min(MAX_GEMS, Math.max(0, v)) : 0);
@@ -292,6 +327,8 @@ export interface LoadResult {
   source: 'main' | 'backup' | 'new';
   migratedFrom?: number;
   error?: string;
+  /** Set when an unreadable save was found: loaded the backup instead, or had to start fresh. */
+  recovered?: 'backup' | 'new_game';
 }
 
 /**
@@ -336,7 +373,17 @@ export class SaveManager {
     }
   }
 
+  /** Keeps an unreadable save so a later fix (or support) can still recover it. */
+  private quarantine(text: string): void {
+    try {
+      if (!this.store.getItem(DAMAGED_KEY)) this.store.setItem(DAMAGED_KEY, text);
+    } catch {
+      /* storage full: nothing more we can do */
+    }
+  }
+
   load(now = Date.now()): LoadResult {
+    let damaged = false;
     for (const [key, source] of [
       [SAVE_KEY, 'main'],
       [BACKUP_KEY, 'backup'],
@@ -346,18 +393,22 @@ export class SaveManager {
       const parsed = this.parse(text);
       if (!parsed) {
         this.lastError = `corrupt ${source} save`;
+        this.quarantine(text);
+        damaged = true;
         continue;
       }
       try {
         const fromVersion = parsed.version;
         const migrated = migrate({ ...parsed.state, version: parsed.state.version ?? fromVersion });
         const state = validate(migrated, now);
-        return { state, source, migratedFrom: fromVersion < SAVE_VERSION ? fromVersion : undefined };
+        return { state, source, migratedFrom: fromVersion < SAVE_VERSION ? fromVersion : undefined, recovered: damaged ? 'backup' : undefined };
       } catch (e) {
         this.lastError = String(e);
+        this.quarantine(text);
+        damaged = true;
       }
     }
-    return { state: createInitialState(now), source: 'new', error: this.lastError };
+    return { state: createInitialState(now), source: 'new', error: damaged ? this.lastError : undefined, recovered: damaged ? 'new_game' : undefined };
   }
 
   hasSave(): boolean {
