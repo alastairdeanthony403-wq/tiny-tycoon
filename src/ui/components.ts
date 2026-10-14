@@ -6,9 +6,11 @@ import { t } from '../core/i18n';
 export interface UICtx {
   sfx: (name: any) => void;
   haptic: (p: number | number[]) => void;
+  balance: () => number;
+  stars: () => number;
 }
 
-let ctx: UICtx = { sfx: () => {}, haptic: () => {} };
+let ctx: UICtx = { sfx: () => {}, haptic: () => {}, balance: () => 0, stars: () => 0 };
 export function setUICtx(c: UICtx): void {
   ctx = c;
 }
@@ -84,10 +86,12 @@ export class UpgradeButton {
   el: HTMLButtonElement;
   private lbl: HTMLElement;
   private price: HTMLElement;
+  private need: HTMLElement;
   constructor(private o: CostButtonOpts) {
     this.lbl = el('span', { class: 'ub-label' });
     this.price = el('span', { class: 'ub-price' });
-    this.el = el('button', { class: 'btn btn-buy', 'data-tut': o.tut }, this.lbl, this.price);
+    this.need = el('span', { class: 'ub-need' });
+    this.el = el('button', { class: 'btn btn-buy', 'data-tut': o.tut }, this.lbl, this.price, this.need);
     this.el.addEventListener(
       'click',
       guarded(o.key, () => {
@@ -114,6 +118,7 @@ export class UpgradeButton {
     const c = this.o.can();
     setText(this.lbl, this.o.label());
     if (cost === null) {
+      setText(this.need, '');
       setText(this.price, t('ui.max'));
       this.el.disabled = true;
       toggle(this.el, 'maxed', true);
@@ -124,6 +129,12 @@ export class UpgradeButton {
     const cur = this.o.currency === 'stars' ? `🌟 ${cost}` : this.o.free || cost === 0 ? t('ui.free') : formatMoney(cost);
     const reason = !c.ok && c.reason && c.reason !== 'money' ? ` · ${t('reason.' + c.reason)}` : '';
     setText(this.price, cur + reason);
+    // Unaffordable: show exactly how much is missing (price stays visible, balance is in the HUD).
+    let need = '';
+    if (!c.ok && c.reason === 'money' && this.o.currency !== 'stars') need = t('hud.need_more', { amount: formatMoney(Math.max(0, cost - ctx.balance())) });
+    if (!c.ok && c.reason === 'stars') need = t('hud.need_more', { amount: `🌟 ${Math.max(0, cost - ctx.stars())}` });
+    setText(this.need, need);
+    this.el.title = need ? `${this.o.label()} ${cur} (${need})` : `${this.o.label()} ${cur}`;
     toggle(this.el, 'cant', !c.ok);
     toggle(this.el, 'affordable', c.ok);
     this.el.setAttribute('aria-disabled', String(!c.ok));
@@ -161,7 +172,7 @@ export class Toasts {
   show(text: string, icon = 'ℹ️', kind: 'info' | 'good' | 'bad' | 'gold' = 'info', ms = 2600, action?: { label: string; fn: () => void }): void {
     while (this.el.children.length >= 4) this.el.firstElementChild?.remove();
     const btn = action ? el('button', { class: 'btn btn-small', onclick: () => { action.fn(); node.remove(); } }, action.label) : null;
-    const node = el('div', { class: `toast toast-${kind}` }, el('span', { class: 'toast-icon' }, icon), el('span', { class: 'toast-text' }, text), btn);
+    const node = el('div', { class: `toast toast-${kind}${action ? ' has-action' : ''}` }, el('span', { class: 'toast-icon' }, icon), el('span', { class: 'toast-text' }, text), btn);
     this.el.append(node);
     setTimeout(() => node.classList.add('out'), ms);
     setTimeout(() => node.remove(), ms + 400);

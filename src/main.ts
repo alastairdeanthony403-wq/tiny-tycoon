@@ -181,10 +181,11 @@ class App {
           this.autosave = 0;
           this.save();
         }
-        if (this.saveSoon >= 0) {
-          this.saveSoon -= dt;
-          if (this.saveSoon < 0) this.save();
-        }
+      }
+      // Pending saves (purchases, settings) flush even from the menus.
+      if (this.saveSoon >= 0) {
+        this.saveSoon -= Math.min(dt, 1);
+        if (this.saveSoon < 0) this.save();
       }
     } catch (e) {
       // Never let a rendering/UI glitch kill the loop.

@@ -21,6 +21,10 @@ export class Tutorial {
   private dom(sel: string): HTMLElement | null {
     const e = document.querySelector(sel) as HTMLElement | null;
     if (!e || e.offsetParent === null) return null;
+    // Never point at something hidden behind a panel or popup.
+    const r = e.getBoundingClientRect();
+    const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    if (top && top !== e && !e.contains(top) && !top.closest('.tutorial, .toasts')) return null;
     return e;
   }
 

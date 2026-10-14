@@ -53,7 +53,7 @@ export class Renderer {
   highlightUid = 0;
   highlightSign = false;
   highlightExpansion = false;
-  insets = { top: 120, bottom: 90, right: 0 };
+  insets = { top: 120, bottom: 90, right: 0, left: 0 };
   time = 0;
   private dpr = 1;
   private vw = 1;
@@ -139,7 +139,7 @@ export class Renderer {
       b.on('expansionCompleted', () => {
         this.camera.resetUser();
         this.camera.zoom *= 0.85; // pull back, then settle
-        if (this.game.state.settings.screenShake) this.camera.shake = 0.6;
+        if (this.shakeAllowed) this.camera.shake = 0.6;
         this.confetti(70);
       }),
       b.on('levelUp', () => this.confetti(60)),
@@ -150,6 +150,16 @@ export class Renderer {
         this.camera.resetUser();
       }),
     ];
+  }
+
+  /** Screen shake needs the shake setting on and reduced motion off. */
+  get shakeAllowed(): boolean {
+    const s = this.game.state.settings;
+    return s.screenShake && !s.reduceFlashing;
+  }
+
+  get reducedMotion(): boolean {
+    return this.game.state.settings.reduceFlashing;
   }
 
   confetti(n: number): void {
@@ -185,7 +195,7 @@ export class Renderer {
     const maxX = Math.max(...pts.map((p) => p.x)) + 6;
     const minY = Math.min(...pts.map((p) => p.y)) - 6;
     const maxY = Math.max(...pts.map((p) => p.y)) + 16;
-    this.camera.frame(minX, minY, maxX, maxY, this.vw, this.vh, this.insets.top, this.insets.bottom, this.insets.right);
+    this.camera.frame(minX, minY, maxX, maxY, this.vw, this.vh, this.insets.top, this.insets.bottom, this.insets.right, this.insets.left);
     if (this.lastSize === 0 || this.lastLocation !== this.game.shop.locationId) {
       this.camera.snap();
       this.lastLocation = this.game.shop.locationId;
@@ -413,7 +423,7 @@ export class Renderer {
       if (next) {
         const T = next.size;
         ctx.setLineDash([5, 5]);
-        ctx.strokeStyle = this.highlightExpansion ? `rgba(255,190,11,${0.6 + 0.4 * Math.sin(this.time * 6)})` : 'rgba(255,255,255,0.7)';
+        ctx.strokeStyle = this.highlightExpansion ? `rgba(255,190,11,${this.reducedMotion ? 1 : 0.6 + 0.4 * Math.sin(this.time * 6)})` : 'rgba(255,255,255,0.7)';
         ctx.lineWidth = this.highlightExpansion ? 3 : 1.5;
         for (let y = 0; y < T; y++) for (let x = 0; x < T; x++) {
           if (x < S && y < S) continue;
@@ -539,7 +549,7 @@ export class Renderer {
     // OPEN / CLOSED sign (tap target in the tutorial)
     const sp = this.signPos();
     const isOpen = g.shop.open;
-    const pulse = this.highlightSign ? 1 + 0.12 * Math.sin(this.time * 8) : 1;
+    const pulse = this.highlightSign && !this.reducedMotion ? 1 + 0.12 * Math.sin(this.time * 8) : 1;
     ctx.save();
     ctx.translate(sp.x, sp.y);
     ctx.scale(pulse, pulse);
@@ -610,10 +620,23 @@ export class Renderer {
     const ctx = this.ctx;
     const isDisplay = OBJECT_MAP[o.kind]?.category === 'display';
     const cap = isDisplay ? g.shopMgr.capacity(o) : 1;
-    const b = this.bounce.get(o.uid) ?? 0;
+    const b = this.reducedMotion ? 0 : this.bounce.get(o.uid) ?? 0;
     const scale = 1 + Math.sin(b * 20) * b * 0.25;
     const base = iso(o.x + 0.5, o.y + 0.5);
     const rt = g.world.checkouts.get(o.uid);
+    if (this.selectedUid === o.uid) {
+      // Selected: soft glow under the object + the tile customers use to reach it.
+      diamond(ctx, o.x, o.y, 1, 'rgba(255,255,255,0.35)', 0, -0.04);
+      if (OBJECT_MAP[o.kind]?.needsAccess) {
+        const a = accessTile(o);
+        ctx.setLineDash([4, 3]);
+        ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+        ctx.lineWidth = 2;
+        diamondPath(ctx, a.x + 0.12, a.y + 0.12, 0.76, 0.76);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
     ctx.save();
     if (scale !== 1) {
       ctx.translate(base.x, base.y);
@@ -630,7 +653,7 @@ export class Renderer {
     });
     ctx.restore();
     if (this.selectedUid === o.uid || this.highlightUid === o.uid) {
-      ctx.strokeStyle = this.highlightUid === o.uid ? `rgba(255,190,11,${0.6 + 0.4 * Math.sin(this.time * 8)})` : '#ffffff';
+      ctx.strokeStyle = this.highlightUid === o.uid ? `rgba(255,190,11,${this.reducedMotion ? 1 : 0.6 + 0.4 * Math.sin(this.time * 8)})` : '#ffffff';
       ctx.lineWidth = 3;
       diamondPath(ctx, o.x - 0.02, o.y - 0.02, 1.04, 1.04);
       ctx.stroke();
@@ -773,7 +796,10 @@ export class Renderer {
     for (const o of objs) {
       const base = iso(o.x + 0.5, o.y + 0.5);
       const h = objectHeight(o);
-      if (Math.abs(w.x - base.x) < TW * 0.42 && w.y < base.y + TH * 0.42 && w.y > base.y - h - 6) return { type: 'object', uid: o.uid };
+      // Touch targets never shrink below ~48 CSS px, whatever the zoom.
+      const minHalf = 24 / this.camera.zoom;
+      const halfW = Math.max(TW * 0.42, minHalf);
+      if (Math.abs(w.x - base.x) < halfW && w.y < base.y + Math.max(TH * 0.42, minHalf * 0.6) && w.y > base.y - Math.max(h + 6, minHalf * 2)) return { type: 'object', uid: o.uid };
     }
     const tp = unIso(w.x, w.y);
     const tx = Math.floor(tp.x);

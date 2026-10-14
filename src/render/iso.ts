@@ -36,19 +36,20 @@ export class Camera {
   vh = 1;
   fitZoom = 1;
 
-  frame(minX: number, minY: number, maxX: number, maxY: number, vw: number, vh: number, insetTop: number, insetBottom: number, insetRight = 0): void {
+  frame(minX: number, minY: number, maxX: number, maxY: number, vw: number, vh: number, insetTop: number, insetBottom: number, insetRight = 0, insetLeft = 0): void {
     this.vw = vw;
     this.vh = vh;
-    const availW = Math.max(100, vw - insetRight - 16);
+    const availW = Math.max(100, vw - insetRight - insetLeft - 16);
     const availH = Math.max(100, vh - insetTop - insetBottom);
     const bw = maxX - minX;
     const bh = maxY - minY;
     this.fitZoom = Math.min(availW / bw, availH / bh, 2.4);
     this.tzoom = this.fitZoom * this.userZoom;
-    // Centre the box inside the available area (account for HUD / bottom bar / side panel).
+    // Centre the box inside the area not covered by UI. Screen x = (wx - cam.x)·zoom + vw/2, so to put
+    // the box centre at vw/2 + (left - right)/2 the camera sits at cx - (left - right)/(2·zoom).
     const cx = (minX + maxX) / 2;
     const cy = (minY + maxY) / 2;
-    const offX = -insetRight / 2 / this.tzoom;
+    const offX = (insetRight - insetLeft) / 2 / this.tzoom;
     const offY = (insetBottom - insetTop) / 2 / this.tzoom;
     this.tx = cx + offX + this.panX;
     this.ty = cy + offY + this.panY;

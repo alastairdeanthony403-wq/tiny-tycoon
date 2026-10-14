@@ -115,9 +115,17 @@ export class EconomyManager {
   /** Average measured income per second over the rolling window. */
   incomeRate(): number {
     const b = this.game.state.incomeBuckets;
-    if (!b.length) return this.game.shop.incomeRate;
-    const sum = b.reduce((a, c) => a + c, 0);
-    return sum / (b.length * 10);
+    // Include the bucket in progress once it holds a few seconds of data, so the rate reacts quickly.
+    const partial = this.bucketTime >= 3;
+    const secs = b.length * 10 + (partial ? this.bucketTime : 0);
+    if (secs <= 0) return this.game.shop.incomeRate;
+    const sum = b.reduce((a, c) => a + c, 0) + (partial ? this.bucketAcc : 0);
+    return sum / secs;
+  }
+
+  /** Sales profit per second minus staff wages: what the cash balance actually gains per second here. */
+  netIncomeRate(): number {
+    return this.incomeRate() - this.wagesPerMinute() / 60;
   }
 
   tick(dt: number): void {
