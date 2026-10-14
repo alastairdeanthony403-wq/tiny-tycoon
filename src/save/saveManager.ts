@@ -1,6 +1,8 @@
 import type { GameState } from '../core/types';
 import { SAVE_VERSION } from '../core/types';
-import { createInitialState, createShop, defaultSettings, defaultStats } from '../core/state';
+import { createInitialState, createShop, defaultMonetization, defaultSettings, defaultStats } from '../core/state';
+import { PREMIUM_MAP, MAX_GEMS } from '../monetization/catalog';
+import type { MonetizationState } from '../core/types';
 import { ECONOMY } from '../config/economy';
 import { OBJECT_MAP } from '../config/objects';
 import { PRODUCT_MAP } from '../config/products';
@@ -63,6 +65,11 @@ export const MIGRATIONS: Record<number, Migration> = {
       s.settings.graphics ??= 'high';
     }
     for (const shop of Object.values<any>(s.shops ?? {})) shop.hires ??= {};
+    return s;
+  },
+  // v2 → v3: premium store (Gems, entitlements, ledger, layouts). Existing progress is untouched.
+  2: (s) => {
+    s.monetization ??= defaultMonetization();
     return s;
   },
 };
@@ -141,6 +148,7 @@ export function validate(raw: any, now = Date.now()): GameState {
   const themes = arr<string>(cos.unlockedThemes).filter((t) => typeof t === 'string');
   if (!themes.includes('classic')) themes.unshift('classic');
   st.cosmetics = { theme: str(cos.theme, 'classic'), unlockedThemes: themes };
+  st.monetization = validateMonetization(r.monetization);
   const set = obj(r.settings);
   const ds = defaultSettings();
   st.settings = {
@@ -178,6 +186,47 @@ export function validate(raw: any, now = Date.now()): GameState {
   st.incomeBuckets = arr<number>(r.incomeBuckets).map((v) => num(v, 0)).slice(-30);
   st.rngSeed = Math.floor(num(r.rngSeed, 1, 0, 2 ** 31));
   return st;
+}
+
+const gemInt = (v: unknown) => (typeof v === 'number' && Number.isSafeInteger(v) ? Math.min(MAX_GEMS, Math.max(0, v)) : 0);
+
+/** Keeps only well-formed premium data; unknown products and malformed entries are dropped. */
+export function validateMonetization(raw: unknown): MonetizationState {
+  const d = defaultMonetization();
+  const m = obj(raw);
+  if (!raw) return d;
+  const tot = obj(m.totals);
+  const ents: MonetizationState['entitlements'] = {};
+  for (const [id, e] of Object.entries(obj(m.entitlements))) {
+    const v = obj(e);
+    if (!PREMIUM_MAP[id as keyof typeof PREMIUM_MAP] || typeof v.txId !== 'string') continue;
+    ents[id] = { source: v.source === 'gems' ? 'gems' : 'iap', txId: v.txId, test: bool(v.test, false), at: num(v.at, 0, 0, 1e15) };
+  }
+  const eq = obj(m.equipped);
+  const layouts: MonetizationState['layouts'] = {};
+  for (const [loc, list] of Object.entries(obj(m.layouts))) {
+    if (!LOCATION_MAP[loc]) continue;
+    layouts[loc] = arr<any>(list)
+      .slice(0, 16)
+      .map((l) =>
+        l && typeof l === 'object'
+          ? { name: str(l.name, 'Layout').slice(0, 40), size: Math.floor(num(l.size, 3, 3, 12)), at: num(l.at, 0, 0, 1e15), objects: arr<any>(l.objects).filter((o) => o && Number.isInteger(o.uid) && Number.isInteger(o.x) && Number.isInteger(o.y)).map((o) => ({ uid: o.uid, kind: str(o.kind, ''), x: o.x, y: o.y, dir: ([0, 1, 2, 3].includes(o.dir) ? o.dir : 1) as 0 | 1 | 2 | 3 })) }
+          : null,
+      );
+  }
+  return {
+    gemsEarned: gemInt(m.gemsEarned),
+    gemsPurchased: gemInt(m.gemsPurchased),
+    totals: { earned: gemInt(tot.earned), purchased: gemInt(tot.purchased), spent: gemInt(tot.spent), revoked: gemInt(tot.revoked) },
+    entitlements: ents,
+    processedTx: arr<string>(m.processedTx).filter((x) => typeof x === 'string').slice(-5000),
+    ledger: arr<any>(m.ledger).filter((l) => l && typeof l.id === 'string').slice(-200).map((l) => ({ id: l.id, kind: ['earn', 'purchase', 'spend', 'revoke', 'entitlement'].includes(l.kind) ? l.kind : 'earn', gems: typeof l.gems === 'number' && Number.isSafeInteger(l.gems) ? l.gems : 0, productId: typeof l.productId === 'string' ? l.productId : undefined, txId: typeof l.txId === 'string' ? l.txId : undefined, source: str(l.source, ''), test: bool(l.test, false), at: num(l.at, 0, 0, 1e15) })),
+    equipped: { skin: typeof eq.skin === 'string' ? eq.skin : null, outfit: typeof eq.outfit === 'string' ? eq.outfit : null },
+    layouts,
+    automation: { autoRestock: bool(obj(m.automation).autoRestock, false) },
+    pending: arr<any>(m.pending).filter((x) => x && typeof x.txId === 'string' && PREMIUM_MAP[x.productId as keyof typeof PREMIUM_MAP]).map((x) => ({ txId: x.txId, productId: x.productId, state: x.state === 'purchased' ? 'purchased' : 'pending', at: num(x.at, 0, 0, 1e15) })),
+    nextLedgerId: Math.floor(num(m.nextLedgerId, 1, 1, 1e12)),
+  };
 }
 
 function validateShop(raw: any, id: string) {

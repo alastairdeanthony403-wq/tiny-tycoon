@@ -28,6 +28,8 @@ export interface ObjectDef {
   appeal?: number;
   needsAccess: boolean;
   color: string;
+  /** Premium catalog product that must be owned to build this (cosmetic decor only). */
+  entitlement?: string;
 }
 
 export const OBJECTS: ObjectDef[] = [
@@ -58,6 +60,10 @@ export const OBJECTS: ObjectDef[] = [
   { id: 'sign', category: 'decor', icon: '🪧', baseCost: 300, costGrowth: 1.6, requiredLevel: 5, maxCount: 4, appeal: 4, needsAccess: false, color: '#f4a261', tiers: [{ cost: 0 }] },
   { id: 'bench', category: 'decor', icon: '🪑', baseCost: 500, costGrowth: 1.6, requiredLevel: 6, maxCount: 6, appeal: 4, needsAccess: false, color: '#a47148', tiers: [{ cost: 0 }] },
   { id: 'statue', category: 'decor', icon: '🗿', baseCost: 4000, costGrowth: 1.8, requiredLevel: 10, maxCount: 3, appeal: 8, needsAccess: false, color: '#adb5bd', tiers: [{ cost: 0 }] },
+  // Premium cosmetic decor (bundle_seasonal_decorations). Same appeal as a plant: no gameplay edge.
+  { id: 'snowman', category: 'decor', icon: '⛄', baseCost: 60, costGrowth: 1.5, requiredLevel: 1, maxCount: 4, appeal: 2, needsAccess: false, color: '#ffffff', tiers: [{ cost: 0 }], entitlement: 'bundle_seasonal_decorations' },
+  { id: 'pumpkin_lantern', category: 'decor', icon: '🎃', baseCost: 60, costGrowth: 1.5, requiredLevel: 1, maxCount: 4, appeal: 2, needsAccess: false, color: '#f77f00', tiers: [{ cost: 0 }], entitlement: 'bundle_seasonal_decorations' },
+  { id: 'fairy_lights', category: 'decor', icon: '✨', baseCost: 60, costGrowth: 1.5, requiredLevel: 1, maxCount: 4, appeal: 2, needsAccess: false, color: '#ffe066', tiers: [{ cost: 0 }], entitlement: 'bundle_seasonal_decorations' },
   { id: 'arcade', category: 'decor', icon: '🕹️', baseCost: 9000, costGrowth: 1.8, requiredLevel: 12, maxCount: 3, appeal: 10, needsAccess: false, color: '#7209b7', tiers: [{ cost: 0 }] },
 ];
 

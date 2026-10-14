@@ -46,6 +46,9 @@ export interface GameEvents {
   layoutChanged: Record<string, never>;
   notify: { key: string; vars?: Record<string, string | number>; icon?: string };
   error: { where: string; message: string };
+  gemsChanged: { delta: number; reason: string };
+  premiumGranted: { productId: string; test: boolean };
+  premiumRevoked: { productId: string };
 }
 
 export interface UnlockInfo {

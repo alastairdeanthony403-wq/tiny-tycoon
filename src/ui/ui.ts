@@ -20,6 +20,8 @@ import { UpgradesPanel } from './panels/upgrades';
 import { ProductsPanel } from './panels/products';
 import { StaffPanel } from './panels/staff';
 import { MapPanel } from './panels/map';
+import { PremiumShop } from './premiumShop';
+import type { PurchaseController } from '../monetization/controller';
 import { OBJECT_MAP } from '../config/objects';
 import { getProduct } from '../config/products';
 import { DEPARTMENT_MAP } from '../config/departments';
@@ -51,6 +53,7 @@ interface PlacementState {
 
 export interface UIHooks extends MenuHooks {
   debugEnabled: boolean;
+  store: () => PurchaseController;
 }
 
 /** UIManager: owns all DOM UI, routes input, and turns game events into feedback. */
@@ -67,6 +70,8 @@ export class UIManager implements AppApi {
   private toasts = new Toasts();
   private tutorial: Tutorial;
   menus: Menus;
+  premium: PremiumShop;
+  private hooks: UIHooks;
   private debug: DebugPanel | null = null;
   private placementBar: HTMLElement;
   private placementTitle: HTMLElement;
@@ -116,11 +121,13 @@ export class UIManager implements AppApi {
       el('div', { class: 'pb-text' }, this.placementTitle, el('small', {}, t('build.instructions'))),
       el('div', { class: 'row' }, el('button', { class: 'btn btn-small', 'data-tut': 'place-auto', onclick: () => this.autoPlace() }, `✨ ${t('build.auto')}`), el('button', { class: 'btn btn-small', onclick: () => this.rotatePlacement() }, `⟳ ${t('insp.rotate')}`), el('button', { class: 'btn btn-small btn-primary', onclick: () => this.confirmHover() }, `✓ ${t('build.place_here')}`), el('button', { class: 'btn btn-small btn-ghost', onclick: () => this.cancelPlacement() }, `✕ ${t('ui.cancel')}`)),
     );
+    this.hooks = hooks;
+    this.premium = new PremiumShop(this, hooks.store, renderer);
     this.tutorial = new Tutorial(this, renderer, this.tutState);
     this.menus = new Menus(this, hooks);
-    if (hooks.debugEnabled) this.debug = new DebugPanel(this, { resetSave: hooks.resetSave });
+    if (hooks.debugEnabled) this.debug = new DebugPanel(this, { resetSave: hooks.resetSave, store: hooks.store });
     this.popups.onOpenChange = () => {};
-    root.append(this.hud.el, this.panelHost, this.inspector.el, this.placementBar, this.navEl, this.toasts.el, this.tutorial.el, this.popups.el, this.menus.el);
+    root.append(this.hud.el, this.panelHost, this.inspector.el, this.placementBar, this.premium.previewBarEl, this.navEl, this.toasts.el, this.tutorial.el, this.premium.el, this.popups.el, this.menus.el);
     if (this.debug) root.append(this.debug.el);
     this.bindInput();
     this.bindGame();
@@ -143,6 +150,16 @@ export class UIManager implements AppApi {
 
   confirm(o: ConfirmOpts): void {
     this.popups.push({ icon: o.icon, title: o.title, body: o.text, kind: 'confirm', buttons: [{ label: o.okLabel, primary: !o.danger, danger: o.danger, onClick: o.onOk }, { label: t('ui.cancel') }] }, true);
+  }
+
+  saveNow(): void {
+    this.hooks.saveNow();
+  }
+
+  openPremium(tab: 'featured' | 'cosmetic' | 'gems' | 'convenience' = 'featured'): void {
+    this.sfx('swoosh');
+    this.premium.endPreview();
+    this.premium.show(tab);
   }
 
   showAchievements(): void {
@@ -169,6 +186,8 @@ export class UIManager implements AppApi {
 
   setGame(game: Game): void {
     this.game = game;
+    this.premium.close();
+    this.premium.endPreview();
     this.popups.clearAll();
     this.inspector.close();
     this.cancelPlacement();
@@ -210,6 +229,7 @@ export class UIManager implements AppApi {
     if (this.refreshTimer > 0.2) {
       this.refreshTimer = 0;
       if (this.activePanel) this.panels.get(this.activePanel)?.refresh();
+      this.premium.tick();
       this.inspector.refresh();
       this.debug?.update(this.fps);
       this.audio.setAmbience(this.game.world.customers.length);
@@ -249,6 +269,7 @@ export class UIManager implements AppApi {
       else bottom = Math.max(bottom, vh - this.panelHost.getBoundingClientRect().top);
     }
     if (this.placement) bottom = Math.max(bottom, vh - this.placementBar.getBoundingClientRect().top);
+    if (this.premium.previewing) bottom = Math.max(bottom, vh - this.premium.previewBarEl.getBoundingClientRect().top);
     // The goals/event column must never cover the shop: in landscape it reserves a left strip,
     // in portrait the space below it (it is compact when collapsed).
     let top = hudBottom + 6;
@@ -364,7 +385,9 @@ export class UIManager implements AppApi {
       this.audio.unlock();
       if (e.key === 'Escape') {
         if (this.popups.open) return;
-        if (this.menus.open) this.menus.close();
+        if (this.premium.open) this.premium.close();
+        else if (this.premium.previewing) this.premium.endPreview();
+        else if (this.menus.open) this.menus.close();
         else if (this.placement) this.cancelPlacement();
         else if (this.inspector.open) this.inspector.close();
         else if (this.activePanel) this.openPanel(null);
@@ -684,6 +707,11 @@ export class UIManager implements AppApi {
         this.sfx('coin');
         this.toast(t('toast.collected', { amount: formatMoney(e.amount) }), '💷', 'good');
       }),
+      b.on('premiumGranted', (e) => {
+        this.premium.render();
+        if (e.productId === 'bundle_seasonal_decorations') this.panels.get('shop')?.refresh(true);
+      }),
+      b.on('premiumRevoked', () => this.premium.render()),
       b.on('error', (e) => {
         if (this.debug) this.toast(`[${e.where}] ${e.message.slice(0, 80)}`, '🐞', 'bad');
       }),

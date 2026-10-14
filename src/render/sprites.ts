@@ -15,6 +15,10 @@ const CHECKOUT_TIERS = ['#8d99ae', '#4cc9f0', '#52b788', '#ffd166'];
 
 export interface ObjectDrawInfo {
   stockRatio: number;
+  /** Premium skin: golden shelves. */
+  gold?: boolean;
+  /** Premium skin: Neon Nights (emissive trims). */
+  neon?: boolean;
   closed?: boolean;
   producing?: boolean;
   powerOff?: boolean;
@@ -72,8 +76,16 @@ export function drawObject(ctx: CanvasRenderingContext2D, o: PlacedObject, info:
   ellipse(ctx, c.x, c.y + 2, 26, 12, 'rgba(0,0,0,0.12)');
   switch (o.kind) {
     case 'shelf': {
-      const t = SHELF_TIERS[Math.min(o.tier, 4)];
+      const base = SHELF_TIERS[Math.min(o.tier, 4)];
+      const t = info.gold ? { ...base, color: '#ffd166', trim: '#e09f00' } : info.neon ? { ...base, color: '#2b1055', trim: '#00f0ff' } : base;
       box(ctx, x + 0.1, y + 0.1, x + 0.9, y + 0.9, t.h, t.color);
+      if (info.gold) {
+        const sp = iso(x + 0.5 + Math.sin(info.time * 2 + o.uid) * 0.3, y + 0.9, t.h * (0.5 + 0.4 * Math.sin(info.time * 3 + o.uid)));
+        ctx.fillStyle = `rgba(255,255,255,${0.5 + 0.5 * Math.sin(info.time * 6 + o.uid)})`;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, 1.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
       // shelf boards on the visible faces
       for (let k = 1; k <= 2; k++) {
         const z = (t.h * k) / 3;
@@ -243,6 +255,73 @@ export function drawObject(ctx: CanvasRenderingContext2D, o: PlacedObject, info:
       ctx.font = '900 8px Nunito, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('SALE!', p.x, p.y);
+      break;
+    }
+    case 'snowman': {
+      const b = iso(x + 0.5, y + 0.5);
+      ellipse(ctx, b.x, b.y - 9, 11, 10, '#f8f9fa');
+      ellipse(ctx, b.x, b.y - 25, 8, 8, '#ffffff');
+      ellipse(ctx, b.x - 3, b.y - 27, 1.2, 1.2, '#222');
+      ellipse(ctx, b.x + 3, b.y - 27, 1.2, 1.2, '#222');
+      ctx.fillStyle = '#f77f00';
+      ctx.beginPath();
+      ctx.moveTo(b.x, b.y - 24);
+      ctx.lineTo(b.x + 7, b.y - 23);
+      ctx.lineTo(b.x, b.y - 22);
+      ctx.fill();
+      ctx.fillStyle = '#e63946';
+      ctx.fillRect(b.x - 8, b.y - 19, 16, 3);
+      ctx.fillStyle = '#2b2d42';
+      ctx.fillRect(b.x - 6, b.y - 38, 12, 6);
+      ctx.fillRect(b.x - 9, b.y - 33, 18, 2);
+      break;
+    }
+    case 'pumpkin_lantern': {
+      const b = iso(x + 0.5, y + 0.5);
+      const glow = 0.6 + 0.4 * Math.sin(info.time * 5 + o.uid);
+      ellipse(ctx, b.x, b.y - 8, 20, 10, `rgba(255,160,40,${0.18 * glow})`);
+      ellipse(ctx, b.x, b.y - 9, 12, 9, '#f77f00');
+      ellipse(ctx, b.x - 5, b.y - 9, 5, 9, '#fb8500');
+      ellipse(ctx, b.x + 5, b.y - 9, 5, 9, '#fb8500');
+      ctx.fillStyle = '#386641';
+      ctx.fillRect(b.x - 1.5, b.y - 21, 3, 5);
+      ctx.fillStyle = `rgba(255,230,120,${glow})`;
+      ctx.beginPath();
+      ctx.moveTo(b.x - 6, b.y - 12);
+      ctx.lineTo(b.x - 3, b.y - 15);
+      ctx.lineTo(b.x - 1, b.y - 12);
+      ctx.moveTo(b.x + 1, b.y - 12);
+      ctx.lineTo(b.x + 3, b.y - 15);
+      ctx.lineTo(b.x + 6, b.y - 12);
+      ctx.fill();
+      ctx.fillRect(b.x - 5, b.y - 8, 10, 2);
+      break;
+    }
+    case 'fairy_lights': {
+      const b = iso(x + 0.5, y + 0.5);
+      ctx.strokeStyle = '#6c584c';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(b.x - 14, b.y);
+      ctx.lineTo(b.x - 14, b.y - 34);
+      ctx.moveTo(b.x + 14, b.y);
+      ctx.lineTo(b.x + 14, b.y - 34);
+      ctx.stroke();
+      ctx.strokeStyle = '#2b2d42';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(b.x - 14, b.y - 32);
+      ctx.quadraticCurveTo(b.x, b.y - 18, b.x + 14, b.y - 32);
+      ctx.stroke();
+      const cols = ['#ff595e', '#ffca3a', '#8ac926', '#1982c4', '#6a4c93'];
+      for (let i = 0; i < 6; i++) {
+        const u = (i + 0.5) / 6;
+        const px = b.x - 14 + 28 * u;
+        const py = b.y - 32 + 14 * 4 * u * (1 - u) * 0.5 * 2;
+        const on = Math.sin(info.time * 4 + i * 1.3) > -0.3;
+        ellipse(ctx, px, py + 2, on ? 3 : 2, on ? 3 : 2, on ? cols[i % 5] : '#555');
+        if (on) ellipse(ctx, px, py + 2, 6, 6, 'rgba(255,240,180,0.18)');
+      }
       break;
     }
     case 'bench':

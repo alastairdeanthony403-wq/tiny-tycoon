@@ -11,9 +11,51 @@ import { UIManager } from './ui/ui';
 import { createInitialState } from './core/state';
 import { setLanguage } from './core/i18n';
 import type { GameEvents } from './core/bus';
+import { PurchaseController } from './monetization/controller';
+import { SimulatedPurchaseAdapter } from './monetization/simulatedAdapter';
+import { NativeBridgeAdapter } from './monetization/nativeBridgeAdapter';
+import { SimulatedVerifier, RemoteVerifier } from './monetization/verifier';
+import type { PurchaseAdapter, PurchaseVerifier } from './monetization/types';
+
+/** Stable anonymous player id for purchase verification (production backends map it to an account). */
+function playerId(): string {
+  try {
+    let id = localStorage.getItem('tinytycoon.playerId');
+    if (!id) {
+      id = (crypto as Crypto & { randomUUID?: () => string }).randomUUID?.() ?? `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+      localStorage.setItem('tinytycoon.playerId', id);
+    }
+    return id;
+  } catch {
+    return 'anonymous';
+  }
+}
+
+/**
+ * Picks the purchase backend:
+ *  - packaged app with a native billing bridge → real store + remote verification (VITE_PURCHASE_VERIFY_URL)
+ *  - dev build, or a build made with VITE_SIMULATED_STORE=1 → test-only simulator (clearly labelled)
+ *  - otherwise → unavailable (no purchases, Gem items still work)
+ */
+function createStoreBackend(): { adapter: PurchaseAdapter; verifier: PurchaseVerifier } {
+  if (typeof window !== 'undefined' && window.TinyTycoonBilling) {
+    return { adapter: new NativeBridgeAdapter(window.TinyTycoonBilling), verifier: new RemoteVerifier(import.meta.env.VITE_PURCHASE_VERIFY_URL as string | undefined, playerId) };
+  }
+  if (import.meta.env.DEV || import.meta.env.VITE_SIMULATED_STORE === '1') {
+    const sim = new SimulatedPurchaseAdapter(navigator.language || 'en-GB');
+    sim.latency = 600;
+    if (typeof navigator !== 'undefined') {
+      sim.online = navigator.onLine;
+      window.addEventListener('online', () => (sim.online = true));
+      window.addEventListener('offline', () => (sim.online = false));
+    }
+    return { adapter: sim, verifier: new SimulatedVerifier() };
+  }
+  return { adapter: new NativeBridgeAdapter(undefined), verifier: new RemoteVerifier(undefined, playerId) };
+}
 
 /** Events after which we save soon (purchases & important progression). */
-const SAVE_TRIGGERS: (keyof GameEvents)[] = ['upgradePurchased', 'objectPlaced', 'objectUpgraded', 'objectRemoved', 'levelUp', 'productUnlocked', 'departmentUnlocked', 'expansionStarted', 'expansionCompleted', 'employeeHired', 'employeeFired', 'employeeLeveled', 'questClaimed', 'achievementClaimed', 'locationUnlocked', 'locationSwitched', 'franchised', 'offlineEarnings', 'crateCollected', 'milestone'];
+const SAVE_TRIGGERS: (keyof GameEvents)[] = ['gemsChanged', 'premiumGranted', 'premiumRevoked', 'upgradePurchased', 'objectPlaced', 'objectUpgraded', 'objectRemoved', 'levelUp', 'productUnlocked', 'departmentUnlocked', 'expansionStarted', 'expansionCompleted', 'employeeHired', 'employeeFired', 'employeeLeveled', 'questClaimed', 'achievementClaimed', 'locationUnlocked', 'locationSwitched', 'franchised', 'offlineEarnings', 'crateCollected', 'milestone'];
 
 function safeStorage(): KeyValueStore {
   try {
@@ -36,6 +78,7 @@ class App {
   readonly notifications = new NotificationService();
   readonly analytics = new AnalyticsManager();
   readonly saves = new SaveManager(safeStorage());
+  store!: PurchaseController;
   private last = performance.now();
   private saveSoon = -1;
   private autosave = 0;
@@ -53,10 +96,20 @@ class App {
     setLanguage(loaded.state.settings.language);
     // 6–7. Shop + NPC systems
     this.game = this.makeGame(loaded.state);
+    const backend = createStoreBackend();
+    this.store = new PurchaseController(() => this.game, backend.adapter, backend.verifier, {
+      onChange: () => this.ui?.premium.render(),
+      onOutcome: (o) => {
+        // Outcomes that arrive outside an explicit purchase (deferred approvals, refunds, relaunch deliveries).
+        if (!this.store.inFlight) this.ui?.premium.reportOutcome(o);
+        this.requestSave();
+      },
+    });
     const canvas = document.getElementById('game') as HTMLCanvasElement;
     this.renderer = new Renderer(canvas, this.game);
     this.ui = new UIManager(document.getElementById('ui')!, canvas, this.game, this.renderer, this.audio, this.haptics, this.notifications, {
       debugEnabled: import.meta.env.DEV,
+      store: () => this.store,
       continueGame: () => this.enterGame(),
       newGame: () => this.newGame(),
       saveNow: () => this.save(),
@@ -98,6 +151,8 @@ class App {
       },
       first ? 900 : 500,
     );
+    // Purchase layer: load products and pick up any interrupted/pending transactions.
+    void this.store.init();
     // 10. Start the loop
     requestAnimationFrame((t) => this.frame(t));
   }

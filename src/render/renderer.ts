@@ -35,6 +35,15 @@ export interface PlacementMode {
   valid: Map<string, { ok: boolean; dir: Dir }>;
 }
 
+/** Premium staff outfits (bundle_staff_outfits): body + apron colours per outfit. */
+const OUTFITS: Record<string, { body: string; apron: string }> = {
+  smart: { body: '#1d3557', apron: '#ffd166' },
+  diner: { body: '#ff6b9a', apron: '#2ec4b6' },
+};
+
+/** Neon Nights shop palette (overrides the cosmetic theme while equipped). */
+const NEON_THEME = { id: 'neon_nights', icon: '🌃', starCost: 0, floorA: '#1d1238', floorB: '#271a4d', wall: '#2b1055', wallTop: '#ff2bd6', trim: '#00f0ff' };
+
 const STAFF_STYLE: Record<string, Partial<PersonStyle>> = {
   cashier: { hat: 'cap', apron: '#3a86ff' },
   stocker: { hat: 'hard', apron: '#fb8500' },
@@ -49,6 +58,8 @@ export class Renderer {
   readonly camera = new Camera();
   readonly particles = new ParticleSystem();
   placement: PlacementMode | null = null;
+  /** Temporary cosmetic preview (from the Premium Shop): applies to the real shop until cleared. */
+  preview: { skin?: string | null; outfit?: string | null } | null = null;
   selectedUid = 0;
   highlightUid = 0;
   highlightSign = false;
@@ -162,6 +173,87 @@ export class Renderer {
     return this.game.state.settings.reduceFlashing;
   }
 
+  activeSkin(): string | null {
+    if (this.preview && this.preview.skin !== undefined) return this.preview.skin;
+    return this.game.state.monetization.equipped.skin;
+  }
+
+  activeOutfit(): string | null {
+    if (this.preview && this.preview.outfit !== undefined) return this.preview.outfit;
+    return this.game.state.monetization.equipped.outfit;
+  }
+
+  /** Night falls outside the shop; the interior (drawn after) stays brightly lit. */
+  private nightOverlay(S: number): void {
+    const ctx = this.ctx;
+    ctx.fillStyle = 'rgba(12,6,40,0.58)';
+    diamondPath(ctx, -8, -8, S + 15, S + 15);
+    ctx.fill();
+    // warm pools of light spilling from the shop onto the pavement
+    const door = iso(-0.6, DOOR_TILE.y + 0.5);
+    const g = this.ctx.createRadialGradient(door.x, door.y, 4, door.x, door.y, 60);
+    g.addColorStop(0, 'rgba(255,43,214,0.35)');
+    g.addColorStop(1, 'rgba(255,43,214,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(door.x, door.y, 60, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  /** Glowing neon tubes along the walls, lit windows and a buzzing sign. */
+  private neonTrims(S: number): void {
+    const ctx = this.ctx;
+    const flicker = this.reducedMotion ? 1 : Math.sin(this.time * 23) > -0.92 ? 1 : 0.35;
+    ctx.save();
+    ctx.lineCap = 'round';
+    const tube = (pts: { x: number; y: number }[], color: string) => {
+      ctx.strokeStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 12;
+      ctx.lineWidth = 3;
+      ctx.globalAlpha = flicker;
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (const p of pts.slice(1)) ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+    };
+    tube([iso(0, S, WALL_H + 2), iso(0, 0, WALL_H + 2), iso(S, 0, WALL_H + 2)], '#ff2bd6');
+    tube([iso(0.05, S, 6), iso(0.05, 0.05, 6), iso(S, 0.05, 6)], '#00f0ff');
+    // lit windows
+    ctx.shadowBlur = 16;
+    ctx.globalAlpha = 1;
+    for (let x = 0; x < S; x++) {
+      if (x === STOCKROOM_TILE.x || !(x % 2 === 0 || x === S - 1)) continue;
+      const a = iso(x + 0.25, 0, 16);
+      const b = iso(x + 0.75, 0, 16);
+      ctx.shadowColor = '#ffe066';
+      ctx.fillStyle = 'rgba(255,224,102,0.95)';
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.lineTo(b.x, b.y - 18);
+      ctx.lineTo(a.x, a.y - 18);
+      ctx.closePath();
+      ctx.fill();
+    }
+    // neon "OPEN 24/7" sign on the back wall
+    const p = iso(Math.max(0.6, S * 0.22), 0, WALL_H - 10);
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 14;
+    ctx.globalAlpha = flicker;
+    ctx.font = '900 9px Nunito, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#00f0ff';
+    ctx.fillText('24/7', p.x, p.y);
+    ctx.restore();
+    // drifting light motes
+    if (!this.reducedMotion && Math.random() < 0.15) {
+      const m = iso(Math.random() * S, Math.random() * S, 10 + Math.random() * 30);
+      this.particles.emit('sparkle', m.x, m.y, 1, { spread: 6, up: 8, color: Math.random() < 0.5 ? '#ff2bd6' : '#00f0ff', life: 1.4 });
+    }
+  }
+
   confetti(n: number): void {
     if (this.game.state.settings.reduceFlashing) n = Math.floor(n / 3);
     for (let i = 0; i < n; i++) this.particles.emit('confetti', Math.random() * this.vw, -10, 1, { spread: 60, up: -60 - Math.random() * 60, screen: true, life: 2.5 });
@@ -210,7 +302,8 @@ export class Renderer {
     const ctx = this.ctx;
     const shop = g.shop;
     const loc = LOCATION_MAP[shop.locationId] ?? LOCATION_MAP.neighborhood;
-    const theme = THEME_MAP[g.state.cosmetics.theme] ?? THEME_MAP.classic;
+    const skin = this.activeSkin();
+    const theme = skin === 'neon_nights' ? NEON_THEME : THEME_MAP[g.state.cosmetics.theme] ?? THEME_MAP.classic;
     this.particles.maxParticles = g.state.settings.graphics === 'low' ? 120 : 400;
     this.particles.enabled = g.state.settings.effectsEnabled;
     this.updateCamera(dt);
@@ -244,6 +337,7 @@ export class Renderer {
 
     const S = shop.size;
     this.drawOutside(S, loc);
+    if (skin === 'neon_nights') this.nightOverlay(S);
     // Street NPCs are behind the left wall.
     const inside: Customer[] = [];
     for (const c of g.world.customers) {
@@ -252,6 +346,7 @@ export class Renderer {
     }
     this.drawFloor(S, theme);
     this.drawWalls(S, theme);
+    if (skin === 'neon_nights') this.neonTrims(S);
     this.drawSortables(inside);
     this.drawOverlays();
     this.particles.draw(ctx, false);
@@ -572,7 +667,15 @@ export class Renderer {
     const w = Math.max(80, ctx.measureText(name).width + 34);
     roundRect(ctx, mid.x - w / 2, mid.y - 10, w, 19, 8);
     ctx.fillStyle = theme.trim;
-    ctx.fill();
+    if (this.activeSkin() === 'neon_nights') {
+      ctx.save();
+      ctx.shadowColor = '#ff2bd6';
+      ctx.shadowBlur = 18;
+      ctx.fillStyle = '#ff2bd6';
+      ctx.fill();
+      ctx.restore();
+      roundRect(ctx, mid.x - w / 2, mid.y - 10, w, 19, 8);
+    } else ctx.fill();
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 2;
     ctx.stroke();
@@ -644,7 +747,10 @@ export class Renderer {
       ctx.translate(-base.x, -base.y);
     }
     if (this.placement && this.placement.ignoreUid === o.uid) ctx.globalAlpha = 0.3;
+    const skin = this.activeSkin();
     drawObject(ctx, o, {
+      gold: skin === 'golden_shelves',
+      neon: skin === 'neon_nights',
       stockRatio: isDisplay ? o.stock / Math.max(1, cap) : 1,
       closed: o.kind === 'checkout' && !(o.uid === owner || rt?.cashierId),
       producing: isDisplay && o.stock < cap,
@@ -680,7 +786,8 @@ export class Renderer {
     const data = this.game.shop.staff.find((s) => s.id === e.id);
     const def = STAFF_MAP[e.type];
     const p = iso(e.pos.x, e.pos.y);
-    const style: PersonStyle = { body: def.color === '#ffffff' ? '#e9ecef' : def.color, head: '#e0ac69', hair: '#4a3728', scale: 1.02, ...STAFF_STYLE[e.type] };
+    const outfit = OUTFITS[this.activeOutfit() ?? ''];
+    const style: PersonStyle = { body: def.color === '#ffffff' ? '#e9ecef' : def.color, head: '#e0ac69', hair: '#4a3728', scale: 1.02, ...STAFF_STYLE[e.type], ...(outfit ? { body: outfit.body, apron: outfit.apron } : {}) };
     drawPerson(this.ctx, p.x, p.y, style, {
       moving: e.moving,
       phase: this.time + e.id * 3,

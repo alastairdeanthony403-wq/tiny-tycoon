@@ -22,4 +22,6 @@ export interface AppApi {
   showAchievements(): void;
   sfx(name: SfxName): void;
   spendFeedback(amount: number): void;
+  saveNow(): void;
+  openPremium(tab?: 'featured' | 'cosmetic' | 'gems' | 'convenience', productId?: string): void;
 }

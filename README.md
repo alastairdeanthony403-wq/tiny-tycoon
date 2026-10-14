@@ -12,6 +12,9 @@ npm run build      # typecheck + production build in dist/
 BALANCE_REPORT=1 npx vitest run tests/balance.test.ts   # print the 60-minute pacing report
 ```
 
+## Premium Shop (monetization)
+Tap the 💎 balance in the HUD. Gems are earned by claiming achievements and milestones, and every item except Gem packs can be unlocked with them. In `npm run dev` (or a build made with `VITE_SIMULATED_STORE=1`) real-money items go through a **clearly labelled test store**, where no money moves. In other builds those items show as unavailable until the native billing bridge exists. Architecture, iOS and Android integration steps, the backend contract and the compliance checklist are in [docs/MONETIZATION.md](docs/MONETIZATION.md).
+
 ## Controls
 - **Tap / click**: objects open the inspector. Tapping a low shelf restocks it, and tapping a checkout serves faster.
 - **Drag** to pan, **pinch / wheel** to zoom, **double-click** or `0` to reset the camera.

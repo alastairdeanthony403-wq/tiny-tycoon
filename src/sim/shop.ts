@@ -75,6 +75,7 @@ export class ShopManager {
     const def = OBJECT_MAP[kind];
     if (!def) return { ok: false, reason: 'unknown', cost: Infinity };
     const cost = this.objectCost(kind);
+    if (def.entitlement && !this.game.monetization.owns(def.entitlement)) return { ok: false, reason: 'not_owned', cost };
     if (this.game.state.player.level < def.requiredLevel) return { ok: false, reason: 'level', cost };
     if (def.requiredDepartment && !this.shop.departments.includes(def.requiredDepartment)) return { ok: false, reason: 'department', cost };
     if (this.count(kind) >= def.maxCount) return { ok: false, reason: 'max', cost };
@@ -282,6 +283,47 @@ export class ShopManager {
     o.dir = r.dir;
     this.game.onLayoutChanged();
     return true;
+  }
+
+  /**
+   * Moves existing objects to the given positions in one step (saved layouts). Objects that no
+   * longer exist are skipped; anything not listed stays put. Fully validated: overlaps, bounds,
+   * access tiles, queue space and door connectivity. On any problem nothing changes.
+   */
+  applyLayout(entries: { uid: number; x: number; y: number; dir: Dir }[]): { ok: boolean; reason?: string } {
+    const shop = this.shop;
+    const byUid = new Map(entries.map((e) => [e.uid, e]));
+    const next = shop.objects.map((o) => {
+      const e = byUid.get(o.uid);
+      return e ? { ...o, x: e.x, y: e.y, dir: e.dir } : { ...o };
+    });
+    if (!entries.some((e) => shop.objects.some((o) => o.uid === e.uid))) return { ok: false, reason: 'nothing_to_move' };
+    const seen = new Set<string>();
+    for (const o of next) {
+      if (o.x < 0 || o.y < 0 || o.x >= shop.size || o.y >= shop.size) return { ok: false, reason: 'out_of_bounds' };
+      const k = `${o.x},${o.y}`;
+      if (seen.has(k)) return { ok: false, reason: 'occupied' };
+      seen.add(k);
+    }
+    const grid = this.buildGrid(next);
+    for (const o of next) {
+      const t = grid.get(o.x, o.y)!;
+      if (t.reserved === 'door' || t.reserved === 'stockroom') return { ok: false, reason: 'reserved' };
+      if (!OBJECT_MAP[o.kind]?.needsAccess) continue;
+      const a = accessTile(o);
+      const at = grid.get(a.x, a.y);
+      if (!at || at.occupied || at.reserved === 'door') return { ok: false, reason: 'no_access' };
+      if (o.kind === 'checkout' && (grid.queues.get(o.uid)?.length ?? 0) < 2) return { ok: false, reason: 'no_queue_space' };
+    }
+    if (!this.connectivityOk(grid, next)) return { ok: false, reason: 'blocks_path' };
+    for (const o of shop.objects) {
+      const n = next.find((x) => x.uid === o.uid)!;
+      o.x = n.x;
+      o.y = n.y;
+      o.dir = n.dir;
+    }
+    this.game.onLayoutChanged();
+    return { ok: true };
   }
 
   canSell(uid: number): boolean {

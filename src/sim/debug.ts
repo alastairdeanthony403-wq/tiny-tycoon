@@ -13,6 +13,10 @@ export class DebugTools {
     this.game.economy.earn(n, false);
   }
 
+  addGems(n = 500): void {
+    this.game.monetization.earnGems(n, 'debug');
+  }
+
   addStars(n = 10): void {
     this.game.economy.addStars(n);
   }

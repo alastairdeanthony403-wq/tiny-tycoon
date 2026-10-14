@@ -3,7 +3,7 @@ import { EXPANSIONS } from '../config/expansions';
 import { LOCATION_MAP } from '../config/locations';
 import { DEPARTMENT_MAP } from '../config/departments';
 import { MAIN_QUESTS } from '../config/quests';
-import type { GameState, PlacedObject, SettingsState, ShopState, Stats } from './types';
+import type { GameState, MonetizationState, PlacedObject, SettingsState, ShopState, Stats } from './types';
 import { SAVE_VERSION } from './types';
 
 /** Fixed landmark tiles (never buildable). */
@@ -25,6 +25,22 @@ export function defaultSettings(): SettingsState {
     reduceFlashing: false,
     screenShake: true,
     graphics: 'high',
+  };
+}
+
+export function defaultMonetization(): MonetizationState {
+  return {
+    gemsEarned: 0,
+    gemsPurchased: 0,
+    totals: { earned: 0, purchased: 0, spent: 0, revoked: 0 },
+    entitlements: {},
+    processedTx: [],
+    ledger: [],
+    equipped: { skin: null, outfit: null },
+    layouts: {},
+    automation: { autoRestock: false },
+    pending: [],
+    nextLedgerId: 1,
   };
 }
 
@@ -120,6 +136,7 @@ export function createInitialState(now = Date.now(), seed = Math.floor(Math.rand
     globalUpgrades: {},
     perks: {},
     cosmetics: { theme: 'classic', unlockedThemes: ['classic'] },
+    monetization: defaultMonetization(),
     settings: defaultSettings(),
     stats: defaultStats(),
     events: { active: [], nextRollIn: ECONOMY.events.firstDelay },

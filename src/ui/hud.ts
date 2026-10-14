@@ -14,6 +14,7 @@ export class Hud {
   el: HTMLElement;
   money: CurrencyDisplay;
   stars: CurrencyDisplay;
+  gems: CurrencyDisplay;
   private lvl: HTMLElement;
   private xp = new ProgressBar('xp');
   private rep: HTMLElement;
@@ -30,6 +31,13 @@ export class Hud {
     this.money = new CurrencyDisplay('💷', t('hud.money'));
     this.money.el.title = t('hud.money_tip');
     this.stars = new CurrencyDisplay('🌟', t('hud.stars'), (n) => formatNumber(Math.round(n)));
+    this.gems = new CurrencyDisplay('💎', t('hud.gems'), (n) => formatNumber(Math.round(n)));
+    this.gems.el.classList.add('gem-pill');
+    this.gems.el.setAttribute('role', 'button');
+    this.gems.el.tabIndex = 0;
+    this.gems.el.title = t('hud.gems_tip');
+    this.gems.el.addEventListener('click', () => this.app.openPremium());
+    this.gems.el.addEventListener('keydown', (e) => (e.key === 'Enter' || e.key === ' ') && this.app.openPremium());
     this.lvl = el('span', { class: 'lvl-num' });
     this.rep = el('span', { class: 'rep' });
     this.shopLvl = el('span', { class: 'shop-lvl' });
@@ -44,6 +52,7 @@ export class Hud {
         { class: 'hud-top' },
         this.money.el,
         this.stars.el,
+        this.gems.el,
         levelBox,
         el('div', { class: 'hud-right' }, this.shopLvl, this.rep, onDebug ? el('button', { class: 'icon-btn', 'aria-label': 'Debug', onclick: onDebug }, '🐞') : null, el('button', { class: 'icon-btn', 'aria-label': t('menu.pause'), onclick: onMenu }, '⏸')),
       ),
@@ -59,6 +68,8 @@ export class Hud {
     this.money.tick(dt);
     this.stars.set(p.stars);
     this.stars.tick(dt);
+    this.gems.set(g.monetization.gems);
+    this.gems.tick(dt);
     setText(this.lvl, String(p.level));
     this.xp.set(p.xp / g.progression.xpToNext(), `${formatNumber(Math.floor(p.xp))}/${formatNumber(g.progression.xpToNext())} XP`);
     const tier = g.progression.repTier();

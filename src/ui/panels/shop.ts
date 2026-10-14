@@ -1,6 +1,6 @@
 import { Panel } from '../panel';
 import type { AppApi } from '../api';
-import { el, setText } from '../dom';
+import { el, setText, guarded } from '../dom';
 import { UpgradeButton, card, iconBox, sectionTitle, statPreview, tag, ProgressBar } from '../components';
 import { OBJECTS, OBJECT_MAP } from '../../config/objects';
 import { DEPARTMENTS } from '../../config/departments';
@@ -21,7 +21,7 @@ export class ShopPanel extends Panel {
   protected structureKey(): string {
     const g = this.g;
     const s = g.shop;
-    return [s.locationId, s.stage, !!s.construction, s.departments.join(), s.pendingPlacements.length, g.state.player.level, g.state.cosmetics.unlockedThemes.join(), g.state.cosmetics.theme, g.mods.seasons().map((x) => x.id).join()].join('|');
+    return [s.locationId, JSON.stringify(g.state.monetization.entitlements), g.monetization.layouts().map((l) => l?.at ?? 0).join(), s.stage, !!s.construction, s.departments.join(), s.pendingPlacements.length, g.state.player.level, g.state.cosmetics.unlockedThemes.join(), g.state.cosmetics.theme, g.mods.seasons().map((x) => x.id).join()].join('|');
   }
 
   protected build(add: (fn: () => void) => void): Node[] {
@@ -80,7 +80,28 @@ export class ShopPanel extends Panel {
     for (const def of OBJECTS.filter((o) => o.category !== 'decor')) out.push(this.buildCard(def.id, add));
     out.push(sectionTitle(t('shop.decor'), '🪴'));
     out.push(el('p', { class: 'hint' }, t('shop.decor_hint')));
-    for (const def of OBJECTS.filter((o) => o.category === 'decor')) out.push(this.buildCard(def.id, add));
+    for (const def of OBJECTS.filter((o) => o.category === 'decor' && !o.entitlement)) out.push(this.buildCard(def.id, add));
+    const premiumDecor = OBJECTS.filter((o) => o.entitlement);
+    if (premiumDecor.some((o) => g.monetization.owns(o.entitlement!))) for (const def of premiumDecor) out.push(this.buildCard(def.id, add));
+    else out.push(card('premium-teaser', iconBox('🎄'), el('div', { class: 'card-main' }, el('b', {}, t('premium.bundle_seasonal_decorations.name')), el('small', {}, t('shop.premium_decor_hint'))), el('button', { class: 'btn btn-small', onclick: () => this.app.openPremium('cosmetic') }, `💎 ${t('shop.see_store')}`)));
+
+    // ---- Saved layouts (1 free slot; layout_slots_plus adds more)
+    out.push(sectionTitle(t('layout.title'), '🗂️'));
+    out.push(el('p', { class: 'hint' }, t('layout.hint')));
+    g.monetization.layouts().forEach((l, i) => {
+      const load = el('button', { class: 'btn btn-small', disabled: !l, onclick: guarded(`layout-load-${i}`, () => {
+        const r = g.monetization.loadLayout(i);
+        if (r.ok) { this.app.sfx('pop'); this.app.toast(t('layout.loaded', { n: i + 1 }), '🗂️', 'good'); this.app.saveNow(); }
+        else { this.app.sfx('error'); this.app.toast(t(`layout.err.${r.reason ?? 'blocks_path'}`), '✗', 'bad'); }
+      }) }, t('layout.load'));
+      const save = el('button', { class: 'btn btn-small btn-ghost', onclick: guarded(`layout-save-${i}`, () => {
+        const doSave = () => { g.monetization.saveLayout(i); this.app.sfx('pop'); this.app.toast(t('layout.saved', { n: i + 1 }), '💾', 'good'); this.app.saveNow(); this.refresh(true); };
+        if (l) this.app.confirm({ icon: '🗂️', title: t('layout.overwrite_title', { n: i + 1 }), text: t('layout.overwrite_text'), okLabel: t('layout.save'), onOk: doSave });
+        else doSave();
+      }) }, t('layout.save'));
+      out.push(card('layout-card', iconBox('🗂️'), el('div', { class: 'card-main' }, el('b', {}, t('layout.slot', { n: i + 1 })), el('small', {}, l ? t('layout.slot_info', { n: l.objects.length, size: `${l.size}×${l.size}` }) : t('layout.empty'))), el('div', { class: 'col' }, save, load)));
+    });
+    if (!g.monetization.owns('layout_slots_plus')) out.push(el('button', { class: 'btn btn-ghost btn-small', onclick: () => this.app.openPremium('convenience') }, `💎 ${t('layout.more_slots')}`));
 
     // ---- Departments
     out.push(sectionTitle(t('shop.departments'), '🏬'));
