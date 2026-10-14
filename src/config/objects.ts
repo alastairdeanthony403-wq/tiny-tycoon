@@ -1,0 +1,66 @@
+import type { DisplayType } from './products';
+
+export type ObjectCategory = 'display' | 'checkout' | 'decor';
+
+export interface ObjectTier {
+  /** Cost to upgrade INTO this tier (tier 0 cost is unused). */
+  cost: number;
+  capacity?: number;
+  speed?: number;
+  maxQueue?: number;
+  /** Bonus to premium product sales from this displayer. */
+  premiumBonus?: number;
+}
+
+export interface ObjectDef {
+  id: string;
+  category: ObjectCategory;
+  icon: string;
+  display?: DisplayType;
+  /** Cost of the first purchase; later copies scale with costGrowth. */
+  baseCost: number;
+  costGrowth: number;
+  requiredLevel: number;
+  requiredDepartment?: string;
+  maxCount: number;
+  tiers: ObjectTier[];
+  /** Decorations: satisfaction appeal points. */
+  appeal?: number;
+  needsAccess: boolean;
+  color: string;
+}
+
+export const OBJECTS: ObjectDef[] = [
+  {
+    id: 'shelf', category: 'display', icon: '🗄️', display: 'shelf', baseCost: 20, costGrowth: 1.85, requiredLevel: 1, maxCount: 40, needsAccess: true, color: '#c98b52',
+    tiers: [{ cost: 0, capacity: 10 }, { cost: 30, capacity: 15 }, { cost: 160, capacity: 25 }, { cost: 900, capacity: 40, premiumBonus: 0.05 }, { cost: 6000, capacity: 60, premiumBonus: 0.1 }],
+  },
+  {
+    id: 'fridge', category: 'display', icon: '🧊', display: 'fridge', baseCost: 120, costGrowth: 1.9, requiredLevel: 2, requiredDepartment: 'drinks', maxCount: 20, needsAccess: true, color: '#9ad1f5',
+    tiers: [{ cost: 0, capacity: 12 }, { cost: 90, capacity: 20 }, { cost: 250, capacity: 35 }, { cost: 1400, capacity: 55, premiumBonus: 0.05 }, { cost: 9000, capacity: 80, premiumBonus: 0.1 }],
+  },
+  {
+    id: 'oven', category: 'display', icon: '🔥', display: 'machine', baseCost: 900, costGrowth: 2.2, requiredLevel: 5, requiredDepartment: 'bakery', maxCount: 6, needsAccess: true, color: '#d97b4a',
+    tiers: [{ cost: 0, capacity: 8, speed: 1 }, { cost: 700, capacity: 12, speed: 1.4 }, { cost: 3000, capacity: 18, speed: 1.9 }, { cost: 12000, capacity: 26, speed: 2.6 }],
+  },
+  {
+    id: 'coffee_machine', category: 'display', icon: '☕', display: 'machine', baseCost: 1800, costGrowth: 2.2, requiredLevel: 7, requiredDepartment: 'cafe', maxCount: 6, needsAccess: true, color: '#555b6e',
+    tiers: [{ cost: 0, capacity: 10, speed: 1 }, { cost: 1500, capacity: 14, speed: 1.4 }, { cost: 6000, capacity: 20, speed: 1.9 }, { cost: 22000, capacity: 30, speed: 2.6 }],
+  },
+  {
+    id: 'checkout', category: 'checkout', icon: '🛒', baseCost: 400, costGrowth: 2.6, requiredLevel: 3, maxCount: 6, needsAccess: true, color: '#7d8597',
+    // Basic → Fast → Express → Premium
+    tiers: [{ cost: 0, speed: 1, maxQueue: 4 }, { cost: 150, speed: 1.4, maxQueue: 5 }, { cost: 1200, speed: 1.9, maxQueue: 6 }, { cost: 9000, speed: 2.6, maxQueue: 8 }],
+  },
+  { id: 'plant', category: 'decor', icon: '🪴', baseCost: 60, costGrowth: 1.5, requiredLevel: 2, maxCount: 12, appeal: 2, needsAccess: false, color: '#52b788', tiers: [{ cost: 0 }] },
+  { id: 'poster', category: 'decor', icon: '🖼️', baseCost: 90, costGrowth: 1.5, requiredLevel: 3, maxCount: 8, appeal: 2, needsAccess: false, color: '#ffafcc', tiers: [{ cost: 0 }] },
+  { id: 'lamp', category: 'decor', icon: '💡', baseCost: 150, costGrowth: 1.5, requiredLevel: 4, maxCount: 8, appeal: 3, needsAccess: false, color: '#ffe066', tiers: [{ cost: 0 }] },
+  { id: 'sign', category: 'decor', icon: '🪧', baseCost: 300, costGrowth: 1.6, requiredLevel: 5, maxCount: 4, appeal: 4, needsAccess: false, color: '#f4a261', tiers: [{ cost: 0 }] },
+  { id: 'bench', category: 'decor', icon: '🪑', baseCost: 500, costGrowth: 1.6, requiredLevel: 6, maxCount: 6, appeal: 4, needsAccess: false, color: '#a47148', tiers: [{ cost: 0 }] },
+  { id: 'statue', category: 'decor', icon: '🗿', baseCost: 4000, costGrowth: 1.8, requiredLevel: 10, maxCount: 3, appeal: 8, needsAccess: false, color: '#adb5bd', tiers: [{ cost: 0 }] },
+  { id: 'arcade', category: 'decor', icon: '🕹️', baseCost: 9000, costGrowth: 1.8, requiredLevel: 12, maxCount: 3, appeal: 10, needsAccess: false, color: '#7209b7', tiers: [{ cost: 0 }] },
+];
+
+export const OBJECT_MAP: Record<string, ObjectDef> = Object.fromEntries(OBJECTS.map((o) => [o.id, o]));
+
+export const CHECKOUT_TIER_KEYS = ['basic', 'fast', 'express', 'premium'];
