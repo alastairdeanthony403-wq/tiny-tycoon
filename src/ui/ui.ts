@@ -34,7 +34,7 @@ import { STAFF } from '../config/staff';
 import { LOCATIONS } from '../config/locations';
 import { formatMoney, formatDuration } from '../core/format';
 import { t } from '../core/i18n';
-import type { UnlockInfo } from '../core/bus';
+import { unlockLine } from './unlocks';
 
 const NAV = [
   { id: 'shop', icon: '🏪' },
@@ -78,6 +78,7 @@ export class UIManager implements AppApi {
   private hammerTimer = 0;
   private lowStockToastAt = 0;
   private fps = 60;
+  private lastChromeBottom = '';
   private tutState = { activePanel: null as string | null, inspectorUid: 0, placing: false };
 
   constructor(
@@ -91,7 +92,7 @@ export class UIManager implements AppApi {
     hooks: UIHooks,
   ) {
     this.game = game;
-    setUICtx({ sfx: (n) => this.sfx(n), haptic: (p) => this.haptics.vibrate(p) });
+    setUICtx({ sfx: (n) => this.sfx(n), haptic: (p) => this.haptics.vibrate(p), balance: () => this.game.state.player.money, stars: () => this.game.state.player.stars });
     this.hud = new Hud(this, () => this.openPause(), hooks.debugEnabled ? () => this.debug?.toggle() : null);
     this.navEl = el('nav', { class: 'bottom-nav', 'aria-label': t('nav.label') });
     for (const n of NAV) {
@@ -145,7 +146,7 @@ export class UIManager implements AppApi {
   }
 
   showAchievements(): void {
-    this.menus.achievements();
+    this.menus.achievementsFromGame();
   }
 
   openPanel(id: string | null): void {
@@ -157,7 +158,12 @@ export class UIManager implements AppApi {
       if (pid === id) p.refresh(true);
     }
     toggle(this.panelHost, 'hidden', !id);
-    for (const b of this.navEl.querySelectorAll('.nav-btn')) toggle(b as HTMLElement, 'active', (b as HTMLElement).dataset.nav === id);
+    for (const b of this.navEl.querySelectorAll('.nav-btn')) {
+      const on = (b as HTMLElement).dataset.nav === id;
+      toggle(b as HTMLElement, 'active', on);
+      if (on) b.setAttribute('aria-current', 'page');
+      else b.removeAttribute('aria-current');
+    }
     if (id) this.sfx('swoosh');
   }
 
@@ -230,12 +236,35 @@ export class UIManager implements AppApi {
     const navTop = this.navEl.getBoundingClientRect().top;
     const vh = window.innerHeight;
     const wide = window.innerWidth >= 900;
+    const shortSide = window.innerHeight <= 520 && window.innerWidth >= 600; // landscape phone: side panels
     const panelOpen = !!this.activePanel;
     let bottom = vh - navTop;
-    if (this.inspector.open) bottom = Math.max(bottom, vh - this.inspector.el.getBoundingClientRect().top);
-    if (panelOpen && !wide) bottom = Math.max(bottom, vh - this.panelHost.getBoundingClientRect().top);
+    let right = 0;
+    if (this.inspector.open) {
+      if (shortSide) right = Math.max(right, this.inspector.el.getBoundingClientRect().width + 8);
+      else bottom = Math.max(bottom, vh - this.inspector.el.getBoundingClientRect().top);
+    }
+    if (panelOpen) {
+      if (wide || shortSide) right = Math.max(right, this.panelHost.getBoundingClientRect().width + 8);
+      else bottom = Math.max(bottom, vh - this.panelHost.getBoundingClientRect().top);
+    }
     if (this.placement) bottom = Math.max(bottom, vh - this.placementBar.getBoundingClientRect().top);
-    this.renderer.insets = { top: hudBottom + 6, bottom: bottom + 6, right: panelOpen && wide ? this.panelHost.getBoundingClientRect().width : 0 };
+    // The goals/event column must never cover the shop: in landscape it reserves a left strip,
+    // in portrait the space below it (it is compact when collapsed).
+    let top = hudBottom + 6;
+    let left = 0;
+    const hl = (this.hud.el.querySelector('.hud-left') as HTMLElement | null)?.getBoundingClientRect();
+    if (hl && hl.height > 0) {
+      if (window.innerWidth > window.innerHeight) left = hl.right + 6;
+      else top = Math.max(top, hl.bottom + 6);
+    }
+    this.renderer.insets = { top, bottom: bottom + 6, right, left };
+    // Toasts float just above whatever bottom chrome is open, so they never cover panels or buttons.
+    const cb = `${Math.round(bottom + 10)}px`;
+    if (this.lastChromeBottom !== cb) {
+      this.lastChromeBottom = cb;
+      document.documentElement.style.setProperty('--chrome-bottom', cb);
+    }
     this.tutState.activePanel = this.activePanel;
     this.tutState.inspectorUid = this.inspector.uid;
     this.tutState.placing = !!this.placement;
@@ -535,27 +564,7 @@ export class UIManager implements AppApi {
 
   // ---------------------------------------------------------- game feedback
 
-  private unlockLine(u: UnlockInfo): string {
-    switch (u.kind) {
-      case 'product':
-        return `${getProduct(u.id)?.icon} ${t(`product.${u.id}`)}`;
-      case 'department':
-        return `${DEPARTMENT_MAP[u.id]?.icon} ${t(`dept.${u.id}`)}`;
-      case 'staff':
-        return `${STAFF_MAP[u.id as keyof typeof STAFF_MAP]?.icon} ${t(`staff.${u.id}`)}`;
-      case 'location':
-        return `${LOCATION_MAP[u.id]?.icon} ${t(`location.${u.id}`)}`;
-      case 'upgrade':
-        return `⬆️ ${t(`upg.${u.id}`)}`;
-      case 'decor':
-      case 'feature':
-        return u.id === 'expansion' ? `🏗️ ${t('unlock.expansion')}` : `${OBJECT_MAP[u.id]?.icon ?? '✨'} ${t(`object.${u.id}`)}`;
-      case 'customer':
-        return `🧍 ${t(`customer.${u.id}`)}`;
-      default:
-        return u.id;
-    }
-  }
+
 
   private flushProductPopups(): void {
     const ids = this.pendingProductPopups.splice(0);
@@ -579,7 +588,7 @@ export class UIManager implements AppApi {
       b.on('levelUp', (e) => {
         this.sfx('levelup');
         this.haptics.vibrate([30, 40, 30]);
-        const list = el('div', { class: 'unlock-list' }, ...e.unlocks.slice(0, 8).map((u) => el('div', { class: 'unlock-item' }, this.unlockLine(u))));
+        const list = el('div', { class: 'unlock-list' }, ...e.unlocks.slice(0, 8).map((u) => el('div', { class: 'unlock-item' }, unlockLine(u))));
         const reward = [e.reward.money ? `💷 ${formatMoney(e.reward.money)}` : '', e.reward.stars ? `🌟 ${e.reward.stars}` : ''].filter(Boolean).join('  ');
         this.popups.push({ id: `lvl-${e.level}`, icon: '⭐', title: t('popup.level_up'), subtitle: t('popup.level_n', { n: e.level }), body: el('div', {}, reward ? el('div', { class: 'reward-big' }, reward) : null, e.unlocks.length ? el('div', { class: 'unlock-head' }, t('popup.unlocked')) : null, list), kind: 'celebrate', buttons: [{ label: t('popup.awesome'), primary: true }] });
       }),
@@ -611,7 +620,6 @@ export class UIManager implements AppApi {
         const a = ACHIEVEMENTS.find((x) => x.id === e.id);
         this.toasts.show(t('toast.achievement', { name: t(`ach.${e.id}`) }), a?.icon ?? '🏆', 'gold', 4500, { label: t('ui.claim'), fn: () => this.showAchievements() });
       }),
-      b.on('achievementClaimed', (e) => this.toast(t('toast.ach_claimed', { n: e.stars }), '🌟', 'gold')),
       b.on('milestone', (e) => {
         const m = MILESTONES.find((x) => x.id === e.id);
         this.sfx('achievement');

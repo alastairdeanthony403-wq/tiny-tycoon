@@ -1,5 +1,7 @@
 import type { AppApi } from './api';
-import { el, setText, toggle } from './dom';
+import { el, setText, toggle, guarded } from './dom';
+import { unlockLine } from './unlocks';
+import type { Game } from '../sim/game';
 import { CurrencyDisplay, ProgressBar, TimerDisplay } from './components';
 import { formatMoney, formatNumber } from '../core/format';
 import { t } from '../core/i18n';
@@ -22,10 +24,11 @@ export class Hud {
   private eventBox: HTMLElement;
   private eventKey = '';
   private eventTimer: TimerDisplay | null = null;
-  questsCollapsed = false;
+  questsCollapsed = loadCollapsed();
 
   constructor(private app: AppApi, onMenu: () => void, onDebug: (() => void) | null) {
     this.money = new CurrencyDisplay('💷', t('hud.money'));
+    this.money.el.title = t('hud.money_tip');
     this.stars = new CurrencyDisplay('🌟', t('hud.stars'), (n) => formatNumber(Math.round(n)));
     this.lvl = el('span', { class: 'lvl-num' });
     this.rep = el('span', { class: 'rep' });
@@ -51,7 +54,8 @@ export class Hud {
   update(dt: number): void {
     const g = this.app.game;
     const p = g.state.player;
-    this.money.set(p.money, `${formatMoney(g.economy.incomeRate() * 60)}${t('ui.per_min')}`);
+    const net = g.economy.netIncomeRate() * 60;
+    this.money.set(p.money, `${net >= 0 ? '+' : '−'}${formatMoney(Math.abs(net))}${t('ui.per_min')}`);
     this.money.tick(dt);
     this.stars.set(p.stars);
     this.stars.tick(dt);
@@ -77,30 +81,84 @@ export class Hud {
   private updateQuests(): void {
     const g = this.app.game;
     const views = g.quests.views();
-    const key = views.map((v) => `${v.id}:${v.progress.completed}`).join('|') + this.questsCollapsed;
+    const main = views.find((v) => v.main) ?? views[0];
+    const others = views.filter((v) => v !== main);
+    const level = g.state.player.level;
+    const key = views.map((v) => `${v.id}:${v.progress.completed}`).join('|') + `|${this.questsCollapsed}|${level}`;
     if (key !== this.questKey) {
       this.questKey = key;
       this.questUpdaters = [];
       this.quests.replaceChildren();
-      const head = el('button', { class: 'quest-head', 'aria-expanded': String(!this.questsCollapsed), onclick: () => { this.questsCollapsed = !this.questsCollapsed; this.questKey = ''; } }, `📋 ${t('hud.goals')} ${this.questsCollapsed ? '▸' : '▾'}`);
-      this.quests.append(head);
-      const list = this.questsCollapsed ? views.filter((v) => v.progress.completed).slice(0, 1) : views;
-      for (const v of list) {
-        const bar = new ProgressBar('quest');
-        const r = v.reward;
-        const rewardText = [r.money ? formatMoney(r.money) : '', r.stars ? `${r.stars}🌟` : '', r.unlockProduct ? `${getProduct(r.unlockProduct)?.icon ?? '🎁'} ${t('quest.new_product')}` : '', r.xp ? `${r.xp} XP` : ''].filter(Boolean).join(' · ');
-        const claim = v.progress.completed
-          ? el('button', { class: 'btn btn-claim', onclick: () => { if (g.quests.claim(v.id)) { this.app.sfx('achievement'); this.questKey = ''; } } }, `🎁 ${t('ui.claim')}`)
-          : null;
-        const node = el('div', { class: `quest ${v.main ? 'main' : 'side'} ${v.progress.completed ? 'done' : ''}`, 'data-quest': v.id }, el('div', { class: 'quest-title' }, v.main ? '⭐ ' : '• ', this.questText(v.id, v.target, v.progress.side?.stat)), bar.el, el('div', { class: 'quest-reward' }, `${t('quest.reward')}: ${rewardText}`), claim);
-        this.questUpdaters.push(() => {
-          const cur = g.quests.view(v.progress);
-          bar.set(cur.value / cur.target, `${formatNumber(Math.min(cur.value, cur.target))}/${formatNumber(cur.target)}`);
-        });
-        this.quests.append(node);
+      const readyCount = views.filter((v) => v.progress.completed).length;
+      const summary = this.questsCollapsed && others.length ? ` · +${others.length}` : '';
+      const head = el(
+        'button',
+        {
+          class: 'quest-head',
+          'aria-expanded': String(!this.questsCollapsed),
+          'aria-controls': 'quest-list',
+          onclick: () => {
+            this.questsCollapsed = !this.questsCollapsed;
+            storeCollapsed(this.questsCollapsed);
+            this.questKey = '';
+            this.app.sfx('click');
+          },
+        },
+        el('span', {}, `📋 ${t('hud.goals')}${summary}`),
+        readyCount ? el('span', { class: 'quest-ready' }, `🎁 ${readyCount}`) : null,
+        el('span', { class: 'quest-chevron', 'aria-hidden': 'true' }, this.questsCollapsed ? '▸' : '▾'),
+      );
+      const list = el('div', { id: 'quest-list', class: 'quest-list' });
+      this.quests.append(head, list);
+      toggle(this.quests, 'collapsed', this.questsCollapsed);
+      // Collapsed: only the main goal (title + progress + claim). Expanded: main goal, side goals, next level preview.
+      const shown = main ? (this.questsCollapsed ? [main] : [main, ...others]) : [];
+      for (const v of shown) list.append(this.questNode(v, this.questsCollapsed));
+      if (!this.questsCollapsed) {
+        const next = g.progression.unlocksAt(level + 1);
+        if (next.length) {
+          const names = next.slice(0, 3).map(unlockLine).join(', ') + (next.length > 3 ? ` +${next.length - 3}` : '');
+          list.append(el('div', { class: 'next-unlock' }, el('b', {}, `${t('hud.next_level', { n: level + 1 })}: `), names));
+        }
       }
     }
     for (const u of this.questUpdaters) u();
+  }
+
+  private questNode(v: ReturnType<Game['quests']['views']>[number], compact: boolean): HTMLElement {
+    const g = this.app.game;
+    const bar = new ProgressBar('quest');
+    const r = v.reward;
+    const rewardText = [r.money ? formatMoney(r.money) : '', r.stars ? `${r.stars}🌟` : '', r.unlockProduct ? `${getProduct(r.unlockProduct)?.icon ?? '🎁'} ${t(`product.${r.unlockProduct}`)}` : '', r.xp ? `${r.xp} XP` : ''].filter(Boolean).join(' · ');
+    const claim = v.progress.completed
+      ? el(
+          'button',
+          {
+            class: 'btn btn-claim',
+            onclick: guarded(`quest-${v.id}`, () => {
+              if (g.quests.claim(v.id)) {
+                this.app.sfx('achievement');
+                this.app.toast(t('toast.reward_claimed', { reward: rewardText }), '🎁', 'gold');
+                this.questKey = '';
+              }
+            }),
+          },
+          `🎁 ${t('ui.claim')} · ${rewardText}`,
+        )
+      : null;
+    const node = el(
+      'div',
+      { class: `quest ${v.main ? 'main' : 'side'} ${v.progress.completed ? 'done' : ''}`, 'data-quest': v.id },
+      el('div', { class: 'quest-title' }, v.main ? '⭐ ' : '• ', this.questText(v.id, v.target, v.progress.side?.stat)),
+      v.progress.completed ? null : bar.el,
+      !compact && !v.progress.completed && rewardText ? el('div', { class: 'quest-reward' }, `${t('quest.reward')}: ${rewardText}`) : null,
+      claim,
+    );
+    this.questUpdaters.push(() => {
+      const cur = g.quests.view(v.progress);
+      bar.set(cur.value / cur.target, `${formatNumber(Math.min(cur.value, cur.target))} / ${formatNumber(cur.target)}`);
+    });
+    return node;
   }
 
   private updateEvents(): void {
@@ -136,5 +194,27 @@ export class Hud {
       if (rs) setText(rs, `✅ ${active.served}  ❌ ${active.lost}`);
     }
     toggle(this.eventBox, 'hidden', !this.eventBox.childElementCount);
+  }
+}
+
+const COLLAPSE_KEY = 'tinytycoon.ui.goalsCollapsed';
+
+/** UI preference only (not game state): survives reloads, safe if storage is blocked. */
+function loadCollapsed(): boolean {
+  try {
+    const v = localStorage.getItem(COLLAPSE_KEY);
+    if (v !== null) return v === '1';
+  } catch {
+    /* fall through to the default */
+  }
+  // Default: compact on short screens so the shop keeps the space.
+  return typeof window !== 'undefined' && window.innerHeight < 700;
+}
+
+function storeCollapsed(v: boolean): void {
+  try {
+    localStorage.setItem(COLLAPSE_KEY, v ? '1' : '0');
+  } catch {
+    /* storage unavailable: preference lasts for this session only */
   }
 }

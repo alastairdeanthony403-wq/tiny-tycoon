@@ -1,10 +1,23 @@
 import type { AppApi } from './api';
 import type { SettingsState } from '../core/types';
-import { el, clear } from './dom';
+import { el, clear, guarded } from './dom';
 import { card, iconBox, sectionTitle, tag, ProgressBar } from './components';
 import { ACHIEVEMENTS } from '../config/achievements';
 import { availableLanguages, t } from '../core/i18n';
 import { formatMoney, formatNumber } from '../core/format';
+import { ECONOMY } from '../config/economy';
+import type { Game } from '../sim/game';
+
+export type AchievementState = 'locked' | 'progress' | 'ready' | 'claimed';
+const STATE_ICON: Record<AchievementState, string> = { locked: '🔒', progress: '⏳', ready: '🎁', claimed: '✓' };
+
+/** Single source of truth for an achievement's display state. */
+export function achievementState(g: Game, id: string): AchievementState {
+  const st = g.state.progression.achievements[id];
+  if (st?.claimed) return 'claimed';
+  if (st?.unlocked) return 'ready';
+  return g.achievements.progress(id).value > 0 ? 'progress' : 'locked';
+}
 
 export interface MenuHooks {
   continueGame: () => void;
@@ -145,7 +158,7 @@ export class Menus {
         toggleRow('colorblind', t('set.colorblind')),
         toggleRow('reduceFlashing', t('set.reduce_flashing')),
         toggleRow('screenShake', t('set.screen_shake')),
-        toggleRow('vibrationEnabled', t('set.vibration')),
+        toggleRow('vibrationEnabled', typeof navigator !== 'undefined' && 'vibrate' in navigator ? t('set.vibration') : `${t('set.vibration')} (${t('set.unsupported')})`),
         sectionTitle(t('set.graphics'), '🖼️'),
         toggleRow('effectsEnabled', t('set.effects')),
         select(t('set.quality'), [['high', t('set.high')], ['low', t('set.low')]], s.graphics, (v) => (s.graphics = v as 'high' | 'low')),
@@ -160,23 +173,48 @@ export class Menus {
     );
   }
 
+  /** Opened from inside the game (toast, Map tab): "Back" returns to the game, never the main menu. */
+  achievementsFromGame(): void {
+    this.returnTo = null;
+    this.achievements();
+  }
+
   achievements(): void {
     const g = this.app.game;
     const list = el('div', { class: 'ach-list' });
-    for (const a of ACHIEVEMENTS) {
-      const st = g.state.progression.achievements[a.id];
+    const states = ACHIEVEMENTS.map((a) => ({ a, state: achievementState(g, a.id) }));
+    // Ready-to-claim first, then in progress, locked, claimed.
+    const order: Record<AchievementState, number> = { ready: 0, progress: 1, locked: 2, claimed: 3 };
+    states.sort((x, y) => order[x.state] - order[y.state]);
+    const ready = states.filter((s) => s.state === 'ready').length;
+    const claimed = states.filter((s) => s.state === 'claimed').length;
+    for (const { a, state } of states) {
       const pr = g.achievements.progress(a.id);
       const bar = new ProgressBar('ach');
-      bar.set(pr.value / pr.target, `${formatNumber(pr.value)}/${formatNumber(pr.target)}`);
-      const reward = [`🌟 ${a.stars}`, `📈 +1%`, a.title ? `🏷️ ${t(`title.${a.title}`)}` : '', a.unlockTheme ? `🎨 ${t(`theme.${a.unlockTheme}`)}` : ''].filter(Boolean).join(' · ');
-      const right = st?.claimed
-        ? tag('✓', 'good')
-        : st?.unlocked
-          ? el('button', { class: 'btn btn-claim', onclick: () => { if (g.achievements.claim(a.id)) { this.app.sfx('achievement'); this.achievements(); } } }, `🎁 ${t('ui.claim')}`)
-          : tag('🔒', 'locked');
-      list.append(card(`ach ${st?.unlocked ? 'unlocked' : ''}`, iconBox(a.icon), el('div', { class: 'card-main' }, el('b', {}, t(`ach.${a.id}`)), el('small', {}, t(`ach.${a.id}.desc`, { n: formatNumber(a.target) })), bar.el, el('small', { class: 'reward' }, reward)), right));
+      bar.set(state === 'claimed' || state === 'ready' ? 1 : pr.value / pr.target, `${formatNumber(state === 'claimed' || state === 'ready' ? pr.target : pr.value)} / ${formatNumber(pr.target)}`);
+      const reward = el('div', { class: 'ach-reward' }, tag(`🌟 ${a.stars}`), tag(`📈 +${Math.round(ECONOMY.achievementRevenueBonus * 100)}% ${t('ach.prices')}`), a.title ? tag(`🏷️ ${t(`title.${a.title}`)}`) : null, a.unlockTheme ? tag(`🎨 ${t(`theme.${a.unlockTheme}`)}`) : null);
+      const stateTag = tag(`${STATE_ICON[state]} ${t(`ach.state.${state}`)}`, `ach-state st-${state}`);
+      let right: HTMLElement | null = null;
+      if (state === 'ready') {
+        const btn = el('button', { class: 'btn btn-claim' }, `🎁 ${t('ui.claim')}`) as HTMLButtonElement;
+        btn.addEventListener(
+          'click',
+          guarded(`ach-${a.id}`, () => {
+            btn.disabled = true; // a second tap can never claim twice
+            if (g.achievements.claim(a.id)) {
+              this.app.sfx('achievement');
+              this.app.toast(t('toast.ach_claimed_full', { name: t(`ach.${a.id}`), n: a.stars }), '🌟', 'gold');
+              this.hooks.saveNow();
+            } else this.app.sfx('error');
+            this.achievements();
+          }),
+        );
+        right = btn;
+      }
+      list.append(card(`ach ach-${state}`, iconBox(state === 'locked' ? '🔒' : a.icon), el('div', { class: 'card-main' }, el('div', { class: 'ach-head' }, el('b', {}, t(`ach.${a.id}`)), stateTag), el('small', {}, t(`ach.${a.id}.desc`, { n: formatNumber(a.target) })), bar.el, reward), right));
     }
-    this.show('achievements', el('h2', {}, `🏆 ${t('menu.achievements')}`), list, this.back(this.returnTo));
+    const summary = el('p', { class: 'hint' }, t('ach.summary', { claimed, total: ACHIEVEMENTS.length, bonus: Math.round(claimed * ECONOMY.achievementRevenueBonus * 100), ready }));
+    this.show('achievements', el('h2', {}, `🏆 ${t('menu.achievements')}`), summary, el('div', { class: 'menu-scroll' }, list), this.back(this.returnTo));
   }
 
   credits(): void {

@@ -182,25 +182,38 @@ export class ShopPanel extends Panel {
 
   private statsCard(add: (fn: () => void) => void): HTMLElement {
     const g = this.g;
-    const rows = {
-      sat: el('span'),
-      rep: el('span'),
-      income: el('span'),
-      wages: el('span'),
-      cust: el('span'),
-      appeal: el('span'),
-    };
+    const v = () => el('span');
+    const rows = { cash: v(), profit: v(), wages: v(), net: v(), lifetime: v(), sat: v(), rep: v(), cust: v(), appeal: v() };
     add(() => {
+      const perMin = (n: number) => `${n < 0 ? '−' : ''}${formatMoney(Math.abs(n))}${t('ui.per_min')}`;
+      setText(rows.cash, formatMoney(g.state.player.money));
+      setText(rows.profit, perMin(g.economy.incomeRate() * 60));
+      setText(rows.wages, perMin(-g.economy.wagesPerMinute()));
+      setText(rows.net, perMin(g.economy.netIncomeRate() * 60));
+      setText(rows.lifetime, formatMoney(g.state.player.lifetimeRevenue));
       const sat = Math.round(g.shop.satisfaction);
       setText(rows.sat, `${sat >= 75 ? '😊' : sat >= 50 ? '🙂' : '😟'} ${sat}%`);
       const tier = g.progression.repTier();
       setText(rows.rep, `${'★'.repeat(tier)}${'☆'.repeat(5 - tier)} ${t(`rep.${tier}`)}`);
-      setText(rows.income, `${formatMoney(g.economy.incomeRate() * 60)}${t('ui.per_min')}`);
-      setText(rows.wages, `${formatMoney(g.economy.wagesPerMinute())}${t('ui.per_min')}`);
       setText(rows.cust, `${g.world.customers.length} / ${g.customers.maxCustomers()}`);
       setText(rows.appeal, `+${g.mods.appeal()}`);
     });
-    const row = (label: string, v: HTMLElement) => el('div', { class: 'stat-row' }, el('span', {}, label), v);
-    return card('stats-card', el('div', { class: 'stat-grid' }, row(t('stat.satisfaction'), rows.sat), row(t('stat.reputation'), rows.rep), row(t('stat.income'), rows.income), row(t('stat.wages'), rows.wages), row(t('stat.customers'), rows.cust), row(t('stat.appeal'), rows.appeal)));
+    const row = (label: string, val: HTMLElement, tip?: string) => el('div', { class: 'stat-row', title: tip }, el('span', {}, label), val);
+    return card(
+      'stats-card',
+      el(
+        'div',
+        { class: 'stat-grid' },
+        row(t('stat.cash'), rows.cash, t('stat.cash_tip')),
+        row(t('stat.lifetime_revenue'), rows.lifetime, t('stat.lifetime_tip')),
+        row(t('stat.sales_profit'), rows.profit, t('stat.sales_profit_tip')),
+        row(t('stat.wages'), rows.wages),
+        row(t('stat.net_profit'), rows.net, t('stat.net_tip')),
+        row(t('stat.customers'), rows.cust),
+        row(t('stat.satisfaction'), rows.sat),
+        row(t('stat.reputation'), rows.rep),
+        row(t('stat.appeal'), rows.appeal),
+      ),
+    );
   }
 }
