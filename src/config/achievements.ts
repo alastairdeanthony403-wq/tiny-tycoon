@@ -35,6 +35,10 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'stylish', icon: '🎨', check: 'premiumThemesOwned', target: 1, stars: 2 },
   { id: 'theme_collector', icon: '🌈', check: 'premiumThemesOwned', target: 2, stars: 4 },
   { id: 'big_earner', icon: '🏦', check: 'lifetimeRevenue', target: 100000, stars: 5 },
+  { id: 'super_shop', icon: '🛒', check: 'shopTier', target: 2, stars: 3 },
+  { id: 'mega_store', icon: '🏢', check: 'shopTier', target: 3, stars: 5 },
+  { id: 'flagship', icon: '👑', check: 'shopTier', target: 4, stars: 10, title: 'flagship' },
+  { id: 'packed_aisles', icon: '🗄️', check: 'displayCount', target: 12, stars: 3 },
   { id: 'retail_empire', icon: '👑', check: 'locationsOwned', target: 5, stars: 15, title: 'tycoon' },
 ];
 

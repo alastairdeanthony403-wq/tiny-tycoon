@@ -32,6 +32,7 @@ export interface GameEvents {
   achievementUnlocked: { id: string };
   achievementClaimed: { id: string; stars: number };
   tutorialCompleted: { skipped: boolean };
+  tierReached: { tier: string; stage: number };
   missionsReset: { kind: 'daily' | 'weekly' };
   missionCompleted: { kind: 'daily' | 'weekly'; id: string };
   missionClaimed: { kind: 'daily' | 'weekly'; id: string; money: number; xp: number; gems: number };

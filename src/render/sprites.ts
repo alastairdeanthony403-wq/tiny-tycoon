@@ -1,6 +1,6 @@
 import type { PlacedObject } from '../core/types';
-import { iso, shade } from './iso';
-import { box, ellipse, emoji, roundRect, badge, diamond } from './shapes';
+import { iso, shade, faces, depth, isoVec } from './iso';
+import { box, ellipse, emoji, roundRect, badge, diamond, frontChain, frontSides } from './shapes';
 import { getProduct } from '../config/products';
 import type { ShopSkin } from './skins';
 import { OBJECT_MAP } from '../config/objects';
@@ -56,10 +56,18 @@ function productsOnTop(ctx: CanvasRenderingContext2D, o: PlacedObject, x0: numbe
   const cols = slots <= 4 ? 2 : 3;
   const rows = Math.ceil(slots / cols);
   const shown = Math.ceil(ratio * slots - 0.001);
-  for (let i = 0; i < slots; i++) {
-    const u = ((i % cols) + 0.5) / cols;
-    const v = (Math.floor(i / cols) + 0.5) / rows;
-    const pt = iso(x0 + (x1 - x0) * u, y0 + (y1 - y0) * v, z);
+  // Draw back-to-front for the current camera angle.
+  const order = Array.from({ length: slots }, (_, i) => i).sort((a, b) => {
+    const pa = slotPos(a);
+    const pb = slotPos(b);
+    return depth(pa[0], pa[1]) - depth(pb[0], pb[1]);
+  });
+  function slotPos(i: number): [number, number] {
+    return [x0 + (x1 - x0) * (((i % cols) + 0.5) / cols), y0 + (y1 - y0) * ((Math.floor(i / cols) + 0.5) / rows)];
+  }
+  for (const i of order) {
+    const [gx, gy] = slotPos(i);
+    const pt = iso(gx, gy, z);
     if (i < shown) {
       ellipse(ctx, pt.x, pt.y + 1, size * 0.45, size * 0.2, 'rgba(0,0,0,0.18)');
       emoji(ctx, p.icon, pt.x, pt.y - size * 0.35, size);
@@ -112,7 +120,7 @@ function drawObjectBody(ctx: CanvasRenderingContext2D, o: PlacedObject, info: Ob
         // gold frame: vertical posts on the visible corners + a rim around the top
         ctx.strokeStyle = sk.rim;
         ctx.lineWidth = 2.5;
-        for (const [px, py] of [[x + 0.1, y + 0.9], [x + 0.9, y + 0.9], [x + 0.9, y + 0.1]]) {
+        for (const [px, py] of frontChain(x + 0.1, y + 0.1, x + 0.9, y + 0.9)) {
           const a = iso(px, py, 0);
           const b2 = iso(px, py, t.h);
           ctx.beginPath();
@@ -123,24 +131,26 @@ function drawObjectBody(ctx: CanvasRenderingContext2D, o: PlacedObject, info: Ob
         diamondOutline(ctx, x + 0.1, y + 0.1, 0.8, t.h, sk.rim, 2.5);
       }
       if (info.skin?.effect === 'golden' && info.sparkle) {
-        const sp = iso(x + 0.5 + Math.sin(info.time * 2 + o.uid) * 0.3, y + 0.9, t.h * (0.5 + 0.4 * Math.sin(info.time * 3 + o.uid)));
+        const fc = frontChain(x + 0.1, y + 0.1, x + 0.9, y + 0.9);
+        const mid = fc[Math.min(1, fc.length - 1)];
+        const sp = iso(mid[0] + Math.sin(info.time * 2 + o.uid) * 0.1, mid[1], t.h * (0.5 + 0.4 * Math.sin(info.time * 3 + o.uid)));
         ctx.fillStyle = `rgba(255,255,255,${0.5 + 0.5 * Math.sin(info.time * 6 + o.uid)})`;
         ctx.beginPath();
         ctx.arc(sp.x, sp.y, 1.6, 0, Math.PI * 2);
         ctx.fill();
       }
       // shelf boards on the visible faces
+      const chain = frontChain(x + 0.1, y + 0.1, x + 0.9, y + 0.9);
       for (let k = 1; k <= 2; k++) {
         const z = (t.h * k) / 3;
         ctx.strokeStyle = t.trim;
         ctx.lineWidth = 2;
-        const a = iso(x + 0.1, y + 0.9, z);
-        const b = iso(x + 0.9, y + 0.9, z);
-        const d = iso(x + 0.9, y + 0.1, z);
         ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.lineTo(d.x, d.y);
+        chain.forEach(([cx, cy], i) => {
+          const p = iso(cx, cy, z);
+          if (i) ctx.lineTo(p.x, p.y);
+          else ctx.moveTo(p.x, p.y);
+        });
         ctx.stroke();
       }
       if (o.tier >= 3) {
@@ -181,8 +191,11 @@ function drawObjectBody(ctx: CanvasRenderingContext2D, o: PlacedObject, info: Ob
           ctx.fill();
         }
       };
-      glass(x + 0.14, y + 0.88, x + 0.86, y + 0.88);
-      glass(x + 0.88, y + 0.86, x + 0.88, y + 0.14);
+      for (const [ax, ay, bx, by] of frontSides(x + 0.12, y + 0.12, x + 0.88, y + 0.88)) {
+        const ux = (bx - ax) * 0.03;
+        const uy = (by - ay) * 0.03;
+        glass(ax + ux, ay + uy, bx - ux, by - uy);
+      }
       const top = iso(x + 0.5, y + 0.5, h);
       const p = getProduct(o.productId);
       if (p) emoji(ctx, p.icon, top.x, top.y - 6, 13);
@@ -193,6 +206,11 @@ function drawObjectBody(ctx: CanvasRenderingContext2D, o: PlacedObject, info: Ob
       const h = 28 + o.tier * 3;
       box(ctx, x + 0.1, y + 0.1, x + 0.9, y + 0.9, h, info.powerOff ? '#8d6e63' : '#d97b4a');
       const glow = info.producing && !info.powerOff ? 0.6 + 0.4 * Math.sin(info.time * 6) : 0.15;
+      // The oven door is on its +y side: only visible when that side faces the camera.
+      if (!faces(0, 1)) {
+        productsOnTop(ctx, o, x + 0.1, y + 0.1, x + 0.9, y + 0.9, h, info.stockRatio, 4 + Math.min(5, o.tier * 2), 11);
+        break;
+      }
       const p1 = iso(x + 0.25, y + 0.9, 6);
       const p2 = iso(x + 0.75, y + 0.9, 6);
       const p3 = iso(x + 0.75, y + 0.9, h - 8);
@@ -224,13 +242,12 @@ function drawObjectBody(ctx: CanvasRenderingContext2D, o: PlacedObject, info: Ob
         const acc = info.skin.checkout.accent;
         ctx.strokeStyle = acc;
         ctx.lineWidth = 3;
-        const p1 = iso(x + 0.08, y + 0.92, 13);
-        const p2 = iso(x + 0.92, y + 0.92, 13);
-        const p3 = iso(x + 0.92, y + 0.08, 13);
         ctx.beginPath();
-        ctx.moveTo(p1.x, p1.y);
-        ctx.lineTo(p2.x, p2.y);
-        ctx.lineTo(p3.x, p3.y);
+        frontChain(x + 0.08, y + 0.08, x + 0.92, y + 0.92).forEach(([cx, cy], i) => {
+          const p = iso(cx, cy, 13);
+          if (i) ctx.lineTo(p.x, p.y);
+          else ctx.moveTo(p.x, p.y);
+        });
         ctx.stroke();
         diamondOutline(ctx, x + 0.08, y + 0.08, 0.84, 20, acc, 2);
       }
@@ -396,6 +413,7 @@ function drawObjectBody(ctx: CanvasRenderingContext2D, o: PlacedObject, info: Ob
     }
     case 'arcade': {
       box(ctx, x + 0.2, y + 0.2, x + 0.8, y + 0.8, 40, '#7209b7');
+      if (!faces(0, 1)) break; // screen is on the +y side
       const s1 = iso(x + 0.25, y + 0.8, 20);
       const s2 = iso(x + 0.75, y + 0.8, 34);
       const hue = (info.time * 80) % 360;
@@ -484,9 +502,10 @@ export function drawPerson(ctx: CanvasRenderingContext2D, sx: number, sy: number
   ctx.beginPath();
   ctx.arc(x, hy - 1 * s, 6.6 * s, Math.PI * 1.05, Math.PI * 1.95);
   ctx.fill();
-  // face (only when facing the camera: +x or +y)
-  if (pose.facing === 0 || pose.facing === 1) {
-    const fx = pose.facing === 0 ? 2 * s : -2 * s;
+  // face (only when the person is turned toward the camera, whatever its rotation)
+  const fdir: [number, number] = ([[1, 0], [0, 1], [-1, 0], [0, -1]] as [number, number][])[((pose.facing % 4) + 4) % 4];
+  if (faces(fdir[0], fdir[1])) {
+    const fx = isoVec(fdir[0], fdir[1]).x >= 0 ? 2 * s : -2 * s;
     ctx.fillStyle = '#222';
     ctx.beginPath();
     ctx.arc(x + fx - 2 * s, hy + 0.5 * s, 0.9 * s, 0, Math.PI * 2);

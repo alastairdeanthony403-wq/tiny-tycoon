@@ -6,6 +6,7 @@ import type { Renderer } from '../render/renderer';
 import { el, clear, guarded, toggle, setText } from './dom';
 import { card, tag } from './components';
 import { drawObject, drawPerson } from '../render/sprites';
+import { setView, view } from '../render/iso';
 import { formatNumber, formatMoney } from '../core/format';
 import { getSkin } from '../render/skins';
 import { t } from '../core/i18n';
@@ -282,6 +283,10 @@ export class PremiumShop {
     const c = el('canvas', { class: 'ps-canvas', width: 480, height: 200, 'aria-label': t(`premium.${p.id}.name`) }) as HTMLCanvasElement;
     const ctx = c.getContext('2d');
     if (!ctx) return null;
+    // Previews always use the classic camera angle, whatever the shop camera is doing.
+    const prevView = { ...view };
+    setView(0, 30, 0, 0);
+    try {
     ctx.scale(2, 2);
     if (p.grant.kind === 'skin') {
       // Mini scene drawn with the real sprites and the theme applied: shelf, fridge, checkout, staff.
@@ -323,6 +328,9 @@ export class PremiumShop {
       });
     }
     return c;
+    } finally {
+      setView(prevView.yaw, prevView.pitch, prevView.px, prevView.py);
+    }
   }
 
   // -------------------------------------------------------------- previews

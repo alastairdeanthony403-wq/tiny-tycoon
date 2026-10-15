@@ -26,6 +26,9 @@ export function defaultSettings(): SettingsState {
     screenShake: true,
     graphics: 'high',
     analyticsConsent: false,
+    cameraSensitivity: 1,
+    cameraDrag: 'orbit',
+    rememberCamera: true,
   };
 }
 

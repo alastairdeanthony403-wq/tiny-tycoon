@@ -7,6 +7,7 @@ import { DEPARTMENTS } from '../../config/departments';
 import { THEMES } from '../../config/cosmetics';
 import { EXPANSIONS } from '../../config/expansions';
 import { formatMoney } from '../../core/format';
+import { DOOR_TILE, STOCKROOM_TILE } from '../../core/state';
 import { t } from '../../core/i18n';
 
 export class ShopPanel extends Panel {
@@ -29,42 +30,8 @@ export class ShopPanel extends Panel {
     const out: Node[] = [];
     out.push(this.statsCard(add));
 
-    // ---- Expansion (the biggest visual reward)
-    const next = g.shopMgr.nextExpansion();
-    if (g.shop.construction) {
-      const bar = new ProgressBar('build');
-      add(() => {
-        const c = g.shop.construction;
-        if (c) bar.set(1 - c.remaining / c.duration, t('shop.constructing'));
-      });
-      out.push(card('expand-card', iconBox('🚧'), el('div', { class: 'card-main' }, el('b', {}, t('shop.constructing_title', { size: `${EXPANSIONS[g.shop.construction.targetStage].size}×${EXPANSIONS[g.shop.construction.targetStage].size}` })), bar.el)));
-    } else if (next) {
-      const btn = new UpgradeButton({
-        key: 'expand',
-        tut: 'expand',
-        label: () => t('shop.expand_btn'),
-        cost: () => g.shopMgr.expansionCost(),
-        can: () => g.shopMgr.canExpand(),
-        onBuy: () => {
-          const c = g.shopMgr.expansionCost() ?? 0;
-          const ok = g.shopMgr.expand();
-          if (ok) {
-            this.app.spendFeedback(c);
-            this.app.openPanel(null);
-          }
-          return ok;
-        },
-      });
-      add(() => btn.update());
-      out.push(
-        card(
-          'expand-card highlight',
-          iconBox('🏗️'),
-          el('div', { class: 'card-main' }, el('b', {}, t('shop.expand_title')), statPreview(t('shop.size'), `${g.shop.size}×${g.shop.size}`, `${next.size}×${next.size}`), el('small', {}, t('shop.expand_desc', { tiles: next.size * next.size - g.shop.size * g.shop.size })), next.requiredLevel > g.state.player.level ? tag(`🔒 ${t('reason.level_n', { n: next.requiredLevel })}`, 'locked') : null),
-          btn.el,
-        ),
-      );
-    } else out.push(card('expand-card', iconBox('🏰'), el('div', { class: 'card-main' }, el('b', {}, t('shop.max_size')))));
+    // ---- Expansion (the biggest visual reward): current tier, next expansion, requirements, preview
+    out.push(...this.expansionSection(add));
 
     // ---- Free items waiting for a spot
     if (g.shop.pendingPlacements.length) {
@@ -199,6 +166,144 @@ export class ShopPanel extends Panel {
     if (g.state.player.level < def.requiredLevel) reqs.push(tag(`🔒 ${t('reason.level_n', { n: def.requiredLevel })}`, 'locked'));
     if (def.requiredDepartment && !g.shop.departments.includes(def.requiredDepartment)) reqs.push(tag(`🔒 ${t(`dept.${def.requiredDepartment}`)}`, 'locked'));
     return card(locked ? 'locked-card' : '', iconBox(def.icon), el('div', { class: 'card-main' }, el('b', {}, t(`object.${kind}`), ' ', count), el('small', {}, t(`object.${kind}.desc`)), el('div', { class: 'tags' }, ...info.map((i) => tag(i)), ...reqs)), btn.el);
+  }
+
+  private expansionSection(add: (fn: () => void) => void): Node[] {
+    const g = this.g;
+    const out: Node[] = [];
+    const cur = g.shopMgr.layoutStats();
+    const tierName = t(`tier.${cur.tier.id}`);
+    out.push(sectionTitle(t('shop.expansion_title'), '🏗️'));
+    // Current tier: real numbers from the simulation.
+    out.push(
+      card(
+        'tier-card',
+        iconBox(cur.tier.icon),
+        el(
+          'div',
+          { class: 'card-main' },
+          el('b', {}, `${tierName} · ${cur.size}×${cur.size}`),
+          el(
+            'div',
+            { class: 'tier-stats' },
+            tag(`⬜ ${t('shop.stat_area', { n: cur.area })}`),
+            tag(`🗄️ ${t('shop.stat_displays', { n: cur.displays, cap: cur.displayCapacity })}`),
+            tag(`🛒 ${t('shop.stat_checkouts', { n: g.shopMgr.count('checkout'), cap: cur.checkoutCap })}`),
+            tag(`🧑‍💼 ${t('shop.stat_staff', { n: g.shop.staff.length, cap: cur.staffCap })}`),
+            tag(`🪴 ${t('shop.stat_decor', { cap: cur.decorCap })}`),
+          ),
+        ),
+      ),
+    );
+    const next = g.shopMgr.nextExpansion();
+    if (g.shop.construction) {
+      const bar = new ProgressBar('build');
+      add(() => {
+        const c = g.shop.construction;
+        if (c) bar.set(1 - c.remaining / c.duration, t('shop.constructing'));
+      });
+      out.push(card('expand-card', iconBox('🚧'), el('div', { class: 'card-main' }, el('b', {}, t('shop.constructing_title', { size: `${EXPANSIONS[g.shop.construction.targetStage].size}×${EXPANSIONS[g.shop.construction.targetStage].size}` })), bar.el)));
+      return out;
+    }
+    if (!next) {
+      out.push(card('expand-card', iconBox('🏰'), el('div', { class: 'card-main' }, el('b', {}, t('shop.max_size')))));
+      return out;
+    }
+    const stage = g.shop.stage + 1;
+    const nx = g.shopMgr.layoutStats(stage);
+    const newTier = nx.tier.id !== cur.tier.id;
+    const p = g.state.player;
+    const reqs: HTMLElement[] = [];
+    const reqRow = (label: string, have: number, need: number, fmt: (n: number) => string) => {
+      const bar = new ProgressBar('req');
+      bar.set(Math.min(1, have / need), `${fmt(Math.min(have, need))} / ${fmt(need)}`);
+      return el('div', { class: `req-row ${have >= need ? 'met' : 'unmet'}` }, el('span', {}, `${have >= need ? '✓' : '✗'} ${label}`), bar.el);
+    };
+    reqs.push(reqRow(t('shop.req_level', { n: next.requiredLevel }), p.level, next.requiredLevel, (n) => String(n)));
+    if (next.requiredRevenue) reqs.push(reqRow(t('shop.req_revenue', { n: formatMoney(next.requiredRevenue) }), p.lifetimeRevenue, next.requiredRevenue, formatMoney));
+    const gains = [
+      t('shop.gain_tiles', { n: nx.area - cur.area }),
+      nx.staffCap > cur.staffCap ? t('shop.gain_staff', { n: nx.staffCap - cur.staffCap }) : null,
+      nx.checkoutCap > cur.checkoutCap ? t('shop.gain_checkouts', { n: nx.checkoutCap }) : null,
+      nx.decorCap > cur.decorCap ? t('shop.gain_decor', { n: nx.decorCap - cur.decorCap }) : null,
+      ...(newTier ? nx.tier.features.map((f) => t(`feat.${f}`)) : []),
+    ].filter(Boolean) as string[];
+    const btn = new UpgradeButton({
+      key: 'expand',
+      tut: 'expand',
+      label: () => t('shop.expand_btn'),
+      cost: () => g.shopMgr.expansionCost(),
+      can: () => g.shopMgr.canExpand(),
+      onBuy: () => {
+        this.app.expandShop();
+        return true;
+      },
+    });
+    add(() => btn.update());
+    const reason = g.shopMgr.canExpand();
+    out.push(
+      card(
+        'expand-card highlight',
+        iconBox(newTier ? nx.tier.icon : '🏗️'),
+        el(
+          'div',
+          { class: 'card-main' },
+          el('b', {}, newTier ? t('shop.next_tier', { name: t(`tier.${nx.tier.id}`) }) : t('shop.expand_title')),
+          statPreview(t('shop.size'), `${cur.size}×${cur.size}`, `${nx.size}×${nx.size}`),
+          this.planPreview(cur.size, nx.size),
+          el('div', { class: 'reqs' }, ...reqs),
+          el('ul', { class: 'gains' }, ...gains.map((x) => el('li', {}, x))),
+          !reason.ok && reason.reason !== 'money' ? tag(`🔒 ${t(`reason.${reason.reason}`, { n: next.requiredLevel })}`, 'locked') : null,
+        ),
+        btn.el,
+      ),
+    );
+    return out;
+  }
+
+  /** Top-down plan of the real layout: today's floor, the new floor, objects, door and stockroom. */
+  private planPreview(cur: number, next: number): HTMLCanvasElement {
+    const g = this.g;
+    const px = 112;
+    const c = el('canvas', { class: 'plan-preview', width: px * 2, height: px * 2, role: 'img', 'aria-label': t('shop.plan_alt', { from: `${cur}×${cur}`, to: `${next}×${next}` }) }) as HTMLCanvasElement;
+    const ctx = c.getContext('2d');
+    if (!ctx) return c;
+    ctx.scale(2, 2);
+    const cell = (px - 8) / next;
+    const o = 4;
+    ctx.fillStyle = 'rgba(255,214,10,0.25)';
+    ctx.fillRect(o, o, next * cell, next * cell);
+    ctx.strokeStyle = '#e09b00';
+    ctx.setLineDash([3, 3]);
+    ctx.strokeRect(o, o, next * cell, next * cell);
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#f6e7cb';
+    ctx.fillRect(o, o, cur * cell, cur * cell);
+    ctx.strokeStyle = '#2b2d42';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(o, o, cur * cell, cur * cell);
+    ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+    ctx.lineWidth = 0.5;
+    for (let i = 1; i < next; i++) {
+      ctx.beginPath();
+      ctx.moveTo(o + i * cell, o);
+      ctx.lineTo(o + i * cell, o + next * cell);
+      ctx.moveTo(o, o + i * cell);
+      ctx.lineTo(o + next * cell, o + i * cell);
+      ctx.stroke();
+    }
+    const colors: Record<string, string> = { display: '#c98b52', checkout: '#7d8597', decor: '#52b788' };
+    for (const ob of g.shop.objects) {
+      const def = OBJECT_MAP[ob.kind];
+      ctx.fillStyle = colors[def?.category ?? 'decor'] ?? '#999';
+      ctx.fillRect(o + ob.x * cell + cell * 0.15, o + ob.y * cell + cell * 0.15, cell * 0.7, cell * 0.7);
+    }
+    // door (west wall) and stockroom (north wall)
+    ctx.fillStyle = '#2bb673';
+    ctx.fillRect(o - 3, o + DOOR_TILE.y * cell + cell * 0.2, 4, cell * 0.6);
+    ctx.fillStyle = '#2b2d42';
+    ctx.fillRect(o + STOCKROOM_TILE.x * cell + cell * 0.2, o - 3, cell * 0.6, 4);
+    return c;
   }
 
   private statsCard(add: (fn: () => void) => void): HTMLElement {

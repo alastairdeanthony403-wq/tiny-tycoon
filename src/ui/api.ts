@@ -24,6 +24,7 @@ export interface AppApi {
   spendFeedback(amount: number): void;
   saveNow(): void;
   openMissions(): void;
+  expandShop(): void;
   skipTutorial(): void;
   openPremium(tab?: 'featured' | 'cosmetic' | 'gems' | 'convenience', productId?: string): void;
 }

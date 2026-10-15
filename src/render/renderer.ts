@@ -1,7 +1,7 @@
 import type { Game } from '../sim/game';
 import type { Customer, EmployeeRuntime } from '../sim/world';
 import type { Dir, PlacedObject } from '../core/types';
-import { Camera, iso, unIso, shade, TW, TH, WALL_H } from './iso';
+import { Camera, iso, isoVec, unIso, shade, setView, depth, faces, TW, TH } from './iso';
 import { box, diamond, diamondPath, ellipse, emoji, roundRect, badge } from './shapes';
 import { drawObject, drawPerson, drawEmote, objectHeight } from './sprites';
 import type { PersonStyle } from './sprites';
@@ -12,6 +12,8 @@ import { CUSTOMER_MAP } from '../config/customers';
 import { STAFF_MAP } from '../config/staff';
 import { OBJECT_MAP } from '../config/objects';
 import { EXPANSIONS } from '../config/expansions';
+import { featuresAtStage, tierOfStage } from '../config/shopTiers';
+import { CAMERA } from '../config/camera';
 import { DEPARTMENT_MAP } from '../config/departments';
 import { DOOR_TILE, STOCKROOM_TILE } from '../core/state';
 import { accessTile } from '../sim/grid';
@@ -78,6 +80,11 @@ export class Renderer {
   private lastSize = 0;
   private lastLocation = '';
   private stars: { x: number; y: number }[] = [];
+  /** Wall height of the current shop tier. */
+  private wallH = 46;
+  /** Building features of the current shop tier (see config/shopTiers.ts). */
+  private features = new Set<string>();
+  private pivot = { x: 0, y: 0 };
 
   constructor(private canvas: HTMLCanvasElement, private game: Game) {
     const ctx = canvas.getContext('2d');
@@ -151,6 +158,7 @@ export class Renderer {
         P.emit('sparkle', p.x, p.y, 3, { spread: 20, up: 60 });
         this.bounce.set(e.uid, 0.2);
       }),
+      b.on('expansionStarted', () => this.camera.resetUser()),
       b.on('expansionCompleted', () => {
         this.camera.resetUser();
         this.camera.zoom *= 0.85; // pull back, then settle
@@ -207,7 +215,7 @@ export class Renderer {
 
   /**
    * Golden Shelves: static warm light pools (cheap gradients, no per-frame particles) and
-   * a gold picture rail along the back walls. Sparkles are drawn by the shelves and respect reduced motion.
+   * a gold picture rail along the far walls. Sparkles are drawn by the shelves and respect reduced motion.
    */
   private goldenLighting(S: number): void {
     const ctx = this.ctx;
@@ -222,12 +230,10 @@ export class Renderer {
     ctx.strokeStyle = '#f2b632';
     ctx.lineWidth = 2.5;
     ctx.beginPath();
-    const a = iso(0, S, WALL_H - 8);
-    const b = iso(0, 0, WALL_H - 8);
-    const d = iso(S, 0, WALL_H - 8);
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.lineTo(d.x, d.y);
+    for (const [a, b] of this.farWallSegments(S, this.wallH - 8)) {
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+    }
     ctx.stroke();
   }
 
@@ -248,27 +254,17 @@ export class Renderer {
       for (const p of pts.slice(1)) ctx.lineTo(p.x, p.y);
       ctx.stroke();
     };
-    tube([iso(0, S, WALL_H + 2), iso(0, 0, WALL_H + 2), iso(S, 0, WALL_H + 2)], '#ff2bd6');
-    tube([iso(0.05, S, 6), iso(0.05, 0.05, 6), iso(S, 0.05, 6)], '#00f0ff');
-    // lit windows
+    // tubes along the top and foot of whichever walls face the camera
+    for (const [a, b] of this.farWallSegments(S, this.wallH + 2)) tube([a, b], '#ff2bd6');
+    for (const [a, b] of this.farWallSegments(S, 6)) tube([a, b], '#00f0ff');
+    // lit windows (same openings the walls draw)
     ctx.shadowBlur = 16;
+    ctx.shadowColor = '#ffe066';
     ctx.globalAlpha = 1;
-    for (let x = 0; x < S; x++) {
-      if (x === STOCKROOM_TILE.x || !(x % 2 === 0 || x === S - 1)) continue;
-      const a = iso(x + 0.25, 0, 16);
-      const b = iso(x + 0.75, 0, 16);
-      ctx.shadowColor = '#ffe066';
-      ctx.fillStyle = 'rgba(255,224,102,0.95)';
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.lineTo(b.x, b.y - 18);
-      ctx.lineTo(a.x, a.y - 18);
-      ctx.closePath();
-      ctx.fill();
-    }
-    // neon "OPEN 24/7" sign on the back wall
-    const p = iso(Math.max(0.6, S * 0.22), 0, WALL_H - 10);
+    for (const w of this.windowOpenings(S)) this.wallQuad(w.ax, w.ay, w.bx, w.by, 16, w.top, 'rgba(255,224,102,0.95)');
+    ctx.shadowBlur = 0;
+    // neon "OPEN 24/7" sign on the north wall (or above it, when that wall is cut away)
+    const p = iso(Math.max(0.6, S * 0.22), 0, this.wallH - 10);
     ctx.shadowColor = '#00f0ff';
     ctx.shadowBlur = 14;
     ctx.globalAlpha = flicker;
@@ -310,21 +306,50 @@ export class Renderer {
     return c ? EXPANSIONS[c.targetStage].size : shop.size;
   }
 
+  /** Points that must stay in view: the shop footprint (incl. door street side) at floor and roof height. */
+  private framePoints(S: number): { x: number; y: number }[] {
+    const top = this.wallH + 34;
+    const out: { x: number; y: number }[] = [];
+    for (const [gx, gy] of [[-1.1, -0.2], [S + 0.25, -0.2], [S + 0.25, S + 0.3], [-1.1, S + 0.5]]) {
+      out.push(iso(gx, gy, 0), iso(gx, gy, top));
+    }
+    return out;
+  }
+
   private updateCamera(dt: number): void {
     const S = this.frameSize();
-    // Frame the shop itself (walls + door + a little street); the expansion ghost may peek off-screen.
-    const pts = [iso(-1.1, -0.2, WALL_H + 34), iso(S + 0.25, -0.2, WALL_H + 34), iso(S + 0.25, S + 0.3), iso(-1.1, S + 0.5)];
+    const cam = this.camera;
+    cam.reduced = this.reducedMotion;
+    cam.panLimit = S / 2 + CAMERA.panMarginTiles;
+    // Rotate around the shop centre. If the pivot moves (expansion), shift the camera by the same
+    // amount so the picture doesn't jump.
+    const pivot = { x: S / 2, y: S / 2 };
+    if (pivot.x !== this.pivot.x || pivot.y !== this.pivot.y) {
+      setView(cam.yaw, cam.pitch, this.pivot.x, this.pivot.y);
+      const d = isoVec(-(pivot.x - this.pivot.x), -(pivot.y - this.pivot.y));
+      cam.x += d.x;
+      cam.y += d.y;
+      this.pivot = pivot;
+    }
+    // Zoom-to-fit uses the classic angle (the widest silhouette), so rotating never "pumps" the zoom.
+    setView(CAMERA.defaultYaw, cam.pitch, pivot.x, pivot.y);
+    const fitPts = this.framePoints(S);
+    const fit = { w: Math.max(...fitPts.map((p) => p.x)) - Math.min(...fitPts.map((p) => p.x)) + 12, h: Math.max(...fitPts.map((p) => p.y)) - Math.min(...fitPts.map((p) => p.y)) + 22 };
+    setView(cam.yaw, cam.pitch, pivot.x, pivot.y);
+    const pts = this.framePoints(S);
     const minX = Math.min(...pts.map((p) => p.x)) - 6;
     const maxX = Math.max(...pts.map((p) => p.x)) + 6;
     const minY = Math.min(...pts.map((p) => p.y)) - 6;
     const maxY = Math.max(...pts.map((p) => p.y)) + 16;
-    this.camera.frame(minX, minY, maxX, maxY, this.vw, this.vh, this.insets.top, this.insets.bottom, this.insets.right, this.insets.left);
+    cam.frame(minX, minY, maxX, maxY, this.vw, this.vh, this.insets.top, this.insets.bottom, this.insets.right, this.insets.left, fit, isoVec(cam.panX, cam.panY));
     if (this.lastSize === 0 || this.lastLocation !== this.game.shop.locationId) {
-      this.camera.snap();
+      cam.snap();
       this.lastLocation = this.game.shop.locationId;
     }
     this.lastSize = S;
-    this.camera.update(dt);
+    cam.update(dt);
+    // Draw (and pick) with the eased angle.
+    setView(cam.yaw, cam.pitch, pivot.x, pivot.y);
   }
 
   render(dt: number): void {
@@ -338,6 +363,8 @@ export class Renderer {
     // A premium skin overrides the Star theme while equipped; unequipping shows the Star theme again.
     const baseTheme = THEME_MAP[g.state.cosmetics.theme] ?? THEME_MAP.classic;
     const theme = skinDef ? { ...baseTheme, ...skinDef.palette } : baseTheme;
+    this.features = featuresAtStage(shop.stage);
+    this.wallH = tierOfStage(shop.stage).wallH;
     this.particles.maxParticles = g.state.settings.graphics === 'low' ? 120 : 400;
     this.particles.enabled = g.state.settings.effectsEnabled;
     this.updateCamera(dt);
@@ -370,19 +397,35 @@ export class Renderer {
     ctx.setTransform(z, 0, 0, z, this.dpr * (this.vw / 2 - cam.x * cam.zoom + sh), this.dpr * (this.vh / 2 - cam.y * cam.zoom + sh));
 
     const S = shop.size;
-    this.drawOutside(S, loc);
+    this.drawOutsideGround(S, loc);
     if (skin === 'neon') this.nightOverlay(S);
-    // Street NPCs are behind the left wall.
+    // Outside things (scenery, people on the street) are split into those behind the shop and those
+    // between the shop and the camera; the latter are drawn last and faded where they cover the shop.
     const inside: Customer[] = [];
+    const outside: { x: number; y: number; draw: () => void }[] = this.sceneryItems(S, loc);
     for (const c of g.world.customers) {
-      if (c.pos.x < 0) this.drawCustomer(c);
+      if (c.pos.x < 0) outside.push({ x: c.pos.x, y: c.pos.y, draw: () => this.drawCustomer(c) });
       else inside.push(c);
     }
+    const front: typeof outside = [];
+    const back: typeof outside = [];
+    for (const it of outside) (this.inFrontOfShop(it.x, it.y, S) ? front : back).push(it);
+    back.sort((a, b) => depth(a.x, a.y) - depth(b.x, b.y));
+    for (const it of back) it.draw();
     this.drawFloor(S, theme);
-    this.drawWalls(S, theme);
+    this.drawWalls(S, theme, 'far');
     if (skin === 'neon') this.neonTrims(S);
     if (skin === 'golden') this.goldenLighting(S);
-    this.drawSortables(inside);
+    this.drawSortables(inside, S, theme);
+    this.drawWalls(S, theme, 'near');
+    front.sort((a, b) => depth(a.x, a.y) - depth(b.x, b.y));
+    for (const it of front) {
+      ctx.save();
+      if (this.coversShop(it.x, it.y, S)) ctx.globalAlpha = 0.35;
+      it.draw();
+      ctx.restore();
+    }
+    this.drawSigns(S, theme);
     this.drawOverlays();
     this.particles.draw(ctx, false);
 
@@ -392,7 +435,7 @@ export class Renderer {
 
   // ------------------------------------------------------------ outside
 
-  private drawOutside(S: number, loc: (typeof LOCATION_MAP)[string]): void {
+  private drawOutsideGround(S: number, loc: (typeof LOCATION_MAP)[string]): void {
     const ctx = this.ctx;
     const th = loc.theme;
     const ext = S + 7;
@@ -403,7 +446,7 @@ export class Renderer {
     for (let y = -8; y < ext; y += 2) for (let x = -8; x < ext; x += 2) if (((x + y) / 2) % 2 === 0) diamond(ctx, x, y, 2, th.ground2);
     // road + sidewalk on the left (the street customers walk along)
     diamondPath(ctx, -4.2, -8, 2.6, ext + 8);
-    ctx.fillStyle = loc.special === 'tourists' ? th.road : th.road;
+    ctx.fillStyle = th.road;
     ctx.fill();
     if (loc.special === 'tourists') {
       // the sea, with a little wave animation
@@ -426,23 +469,54 @@ export class Renderer {
     diamondPath(ctx, -1.6, -8, 1.6, ext + 8);
     ctx.fillStyle = loc.special === 'tourists' ? '#ffe8b0' : '#dee2e6';
     ctx.fill();
-    // scenery: trees / buildings / lanterns depending on the location
+    // entrance mat in front of the door
+    diamond(ctx, -1, DOOR_TILE.y, 1, 'rgba(180,60,60,0.45)', 0.5, 0.1);
+  }
+
+  /** Trees / buildings / lanterns around the shop, as depth-sortable items. */
+  private sceneryItems(S: number, loc: (typeof LOCATION_MAP)[string]): { x: number; y: number; draw: () => void }[] {
     const seed = (n: number) => {
       const v = Math.sin(n * 127.1 + S * 3.7) * 43758.5453;
       return v - Math.floor(v);
     };
+    const out: { x: number; y: number; draw: () => void }[] = [];
     for (let i = 0; i < 6; i++) {
       const x = S + 1.5 + seed(i) * 3;
       const y = -1 + i * ((S + 3) / 6);
-      this.scenery(x, y, loc.special, i);
+      out.push({ x, y, draw: () => this.scenery(x, y, loc.special, i) });
     }
     for (let i = 0; i < 5; i++) {
       const x = 1 + i * ((S + 1) / 5);
       const y = -2.2 - seed(i + 9) * 1.5;
-      this.scenery(x, y, loc.special, i + 10);
+      out.push({ x, y, draw: () => this.scenery(x, y, loc.special, i + 10) });
     }
-    // entrance mat in front of the door
-    diamond(ctx, -1, DOOR_TILE.y, 1, 'rgba(180,60,60,0.45)', 0.5, 0.1);
+    return out;
+  }
+
+  /** True when a ground point outside the shop lies between the shop and the camera. */
+  private inFrontOfShop(x: number, y: number, S: number): boolean {
+    const qx = Math.max(0, Math.min(S, x));
+    const qy = Math.max(0, Math.min(S, y));
+    return depth(x, y) > depth(qx, qy) + 0.01;
+  }
+
+  /** True when something standing at (x, y) would hide part of the shop on screen. */
+  private coversShop(x: number, y: number, S: number): boolean {
+    const quad = [iso(0, 0), iso(S, 0), iso(S, S), iso(0, S)];
+    const inside = (p: { x: number; y: number }) => {
+      let sign = 0;
+      for (let i = 0; i < 4; i++) {
+        const a = quad[i];
+        const b = quad[(i + 1) % 4];
+        const c = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+        if (c !== 0) {
+          if (sign === 0) sign = Math.sign(c);
+          else if (Math.sign(c) !== sign) return false;
+        }
+      }
+      return true;
+    };
+    return inside(iso(x, y, 20)) || inside(iso(x, y, 50));
   }
 
   private scenery(x: number, y: number, special: string | undefined, i: number): void {
@@ -451,7 +525,7 @@ export class Renderer {
     if (special === 'downtown' || special === 'busy') {
       const h = 50 + (i % 3) * 25;
       box(ctx, x - 0.6, y - 0.6, x + 0.6, y + 0.6, h, special === 'busy' ? '#adb5bd' : ['#6c757d', '#8d99ae', '#5c677d'][i % 3]);
-      for (let k = 0; k < h / 16 - 1; k++) {
+      for (let k = 0; k < h / 16 - 1 && faces(1, 0); k++) {
         const w = iso(x + 0.6, y, 12 + k * 14);
         ctx.fillStyle = (i + k) % 3 ? '#ffe066' : '#caf0f8';
         ctx.fillRect(w.x - 8, w.y - 8, 6, 6);
@@ -500,6 +574,7 @@ export class Renderer {
         if (tile?.department && DEPARTMENT_MAP[tile.department]) diamond(ctx, x, y, 1, hexAlpha(DEPARTMENT_MAP[tile.department].floorTint, 0.45), 0, 0.06);
       }
     }
+    this.floorFinish(S, theme);
     // queue lane markings
     for (const [, tiles] of grid.queues) {
       for (const q of tiles) {
@@ -531,12 +606,14 @@ export class Renderer {
       }
       // scaffolding poles
       for (let i = 0; i <= T; i += 1) {
-        for (const pt of [iso(T, i), iso(i, T)]) {
+        for (const [gx, gy] of [[T, i], [i, T]]) {
+          const pt = iso(gx, gy);
+          const top = iso(gx, gy, 30 * prog);
           ctx.strokeStyle = '#adb5bd';
           ctx.lineWidth = 2;
           ctx.beginPath();
           ctx.moveTo(pt.x, pt.y);
-          ctx.lineTo(pt.x, pt.y - 30 * prog);
+          ctx.lineTo(top.x, top.y);
           ctx.stroke();
         }
       }
@@ -573,110 +650,233 @@ export class Renderer {
     }
   }
 
+  /** Tier floor finishes: tiled grout (Super Shop), a border band (Mega Store), a marble medallion (Flagship). */
+  private floorFinish(S: number, theme: (typeof THEME_MAP)[string]): void {
+    const ctx = this.ctx;
+    const f = this.features;
+    if (f.has('tiled_floor')) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      for (let i = 0; i <= S; i++) {
+        const a = iso(i, 0);
+        const b = iso(i, S);
+        const c = iso(0, i);
+        const d = iso(S, i);
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.moveTo(c.x, c.y);
+        ctx.lineTo(d.x, d.y);
+      }
+      ctx.stroke();
+    }
+    if (f.has('floor_border')) {
+      ctx.strokeStyle = shade(theme.trim, -0.1);
+      ctx.globalAlpha = 0.55;
+      ctx.lineWidth = 3;
+      diamondPath(ctx, 0.18, 0.18, S - 0.36, S - 0.36);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    if (f.has('marble_inlay')) {
+      const c = S / 2;
+      for (const [r, col] of [[1.3, 'rgba(255,255,255,0.45)'], [0.95, 'rgba(242,182,50,0.55)'], [0.55, 'rgba(255,255,255,0.6)']] as [number, string][]) {
+        diamond(ctx, c - r / 2, c - r / 2, r, col);
+      }
+    }
+  }
+
   // --------------------------------------------------------------- walls
 
-  private drawWalls(S: number, theme: (typeof THEME_MAP)[string]): void {
+  /** The four sides of the building with their outward ground normals. */
+  private wallSides(S: number) {
+    return [
+      { id: 'N', x0: 0, y0: 0, x1: S, y1: 0, nx: 0, ny: -1, shade: 0 },
+      { id: 'W', x0: 0, y0: 0, x1: 0, y1: S, nx: -1, ny: 0, shade: -0.15 },
+      { id: 'S', x0: 0, y0: S, x1: S, y1: S, nx: 0, ny: 1, shade: -0.08 },
+      { id: 'E', x0: S, y0: 0, x1: S, y1: S, nx: 1, ny: 0, shade: -0.22 },
+    ] as const;
+  }
+
+  /** A wall is "far" when the camera looks at its inside face; near walls are cut away (dollhouse view). */
+  private isFarWall(side: { nx: number; ny: number }): boolean {
+    return !faces(side.nx, side.ny);
+  }
+
+  /** Far-wall top edges at height z, as segments (for trims drawn by cosmetic themes). */
+  private farWallSegments(S: number, z: number): [{ x: number; y: number }, { x: number; y: number }][] {
+    return this.wallSides(S)
+      .filter((w) => this.isFarWall(w))
+      .map((w) => [iso(w.x0, w.y0, z), iso(w.x1, w.y1, z)]);
+  }
+
+  /** Window openings on the far walls (shared by the walls and the Neon Nights lit windows). */
+  private windowOpenings(S: number): { ax: number; ay: number; bx: number; by: number; top: number }[] {
+    const out: { ax: number; ay: number; bx: number; by: number; top: number }[] = [];
+    const H = this.wallH;
+    const top = Math.min(H - 8, 34 + (H - 46) * 0.5);
+    for (const side of this.wallSides(S)) {
+      if (!this.isFarWall(side)) continue;
+      const dx = (side.x1 - side.x0) / S;
+      const dy = (side.y1 - side.y0) / S;
+      for (let k = 0; k < S; k++) {
+        if ((side.id === 'W' && k === DOOR_TILE.y) || (side.id === 'N' && k === STOCKROOM_TILE.x)) continue;
+        if (!(k % 2 === 0 || k === S - 1)) continue;
+        const ax = side.x0 + dx * k;
+        const ay = side.y0 + dy * k;
+        out.push({ ax: ax + dx * 0.25, ay: ay + dy * 0.25, bx: ax + dx * 0.75, by: ay + dy * 0.75, top });
+      }
+    }
+    return out;
+  }
+
+  /** Vertical quad on the wall plane between ground points a→b, from z0 to z1. */
+  private wallQuad(ax: number, ay: number, bx: number, by: number, z0: number, z1: number, color: string): void {
+    const ctx = this.ctx;
+    const a0 = iso(ax, ay, z0);
+    const b0 = iso(bx, by, z0);
+    const b1 = iso(bx, by, z1);
+    const a1 = iso(ax, ay, z1);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(a0.x, a0.y);
+    ctx.lineTo(b0.x, b0.y);
+    ctx.lineTo(b1.x, b1.y);
+    ctx.lineTo(a1.x, a1.y);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  private drawWalls(S: number, theme: (typeof THEME_MAP)[string], pass: 'far' | 'near'): void {
+    const ctx = this.ctx;
+    const f = this.features;
+    const NEAR_H = 9;
+    for (const side of this.wallSides(S)) {
+      const far = this.isFarWall(side);
+      if ((pass === 'far') !== far) continue;
+      const H = far ? this.wallH : NEAR_H;
+      const base = shade(theme.wall, side.shade);
+      const dx = (side.x1 - side.x0) / S;
+      const dy = (side.y1 - side.y0) / S;
+      for (let k = 0; k < S; k++) {
+        const ax = side.x0 + dx * k;
+        const ay = side.y0 + dy * k;
+        const bx = ax + dx;
+        const by = ay + dy;
+        const isDoor = side.id === 'W' && k === DOOR_TILE.y;
+        const isStock = side.id === 'N' && k === STOCKROOM_TILE.x;
+        if (isDoor) continue;
+        this.wallQuad(ax, ay, bx, by, 0, H, isStock ? shade(base, -0.05) : base);
+        // wall-top cap
+        this.wallQuad(ax, ay, bx, by, H, H + 5, f.has('gold_cornice') && far ? '#f2b632' : theme.wallTop);
+        if (!far) continue;
+        if (f.has('baseboard')) this.wallQuad(ax, ay, bx, by, 0, 5, shade(base, -0.3));
+        if (f.has('wall_band')) this.wallQuad(ax, ay, bx, by, H * 0.56, H * 0.56 + 3, shade(theme.trim, -0.05));
+        if (f.has('gold_cornice')) this.wallQuad(ax, ay, bx, by, H - 4, H, '#ffd166');
+        const u = (t: number) => [ax + (bx - ax) * t, ay + (by - ay) * t] as const;
+        if (isStock) {
+          const [s0x, s0y] = u(0.2);
+          const [s1x, s1y] = u(0.8);
+          this.wallQuad(s0x, s0y, s1x, s1y, 0, 34, shade(theme.trim, -0.2));
+          const m = iso((ax + bx) / 2, (ay + by) / 2, 28);
+          badge(ctx, t('world.staff'), m.x, m.y, '#2b2d42', '#fff', 6);
+        } else if (k % 2 === 0 || k === S - 1) {
+          // window
+          const [w0x, w0y] = u(0.25);
+          const [w1x, w1y] = u(0.75);
+          const top = Math.min(H - 8, 34 + (H - 46) * 0.5);
+          this.wallQuad(w0x, w0y, w1x, w1y, 16, top, '#bde0fe');
+          const a = iso(w0x, w0y, 16);
+          const b = iso(w1x, w1y, 16);
+          const c = iso(w1x, w1y, top);
+          const d = iso(w0x, w0y, top);
+          ctx.strokeStyle = '#fff';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.lineTo(c.x, c.y);
+          ctx.lineTo(d.x, d.y);
+          ctx.closePath();
+          ctx.stroke();
+        } else if (f.has('wall_lights')) {
+          // wall sconce with a soft glow
+          const m = iso((ax + bx) / 2, (ay + by) / 2, H * 0.72);
+          const glow = ctx.createRadialGradient(m.x, m.y, 1, m.x, m.y, 16);
+          glow.addColorStop(0, 'rgba(255,236,170,0.85)');
+          glow.addColorStop(1, 'rgba(255,236,170,0)');
+          ctx.fillStyle = glow;
+          ctx.beginPath();
+          ctx.arc(m.x, m.y, 16, 0, Math.PI * 2);
+          ctx.fill();
+          ellipse(ctx, m.x, m.y, 3.5, 3, '#fff3bf');
+        }
+      }
+      if (side.id === 'W') this.drawDoor(far, H, theme);
+    }
+    // Corner pillars (Super Shop and up): full height where both walls are far, cut down otherwise.
+    if (f.has('pillars') && pass === 'far') {
+      const sides = this.wallSides(S);
+      const farOf = (id: string) => this.isFarWall(sides.find((w) => w.id === id)!);
+      for (const [cx, cy, w1, w2] of [[0, 0, 'N', 'W'], [S, 0, 'N', 'E'], [S, S, 'S', 'E'], [0, S, 'W', 'S']] as [number, number, string, string][]) {
+        if (!(farOf(w1) && farOf(w2))) continue;
+        box(ctx, cx - 0.14, cy - 0.14, cx + 0.14, cy + 0.14, this.wallH + 5, f.has('gold_cornice') ? '#e0a526' : shade(theme.trim, -0.1));
+      }
+    }
+  }
+
+  /** Door frame and sliding doors on the west wall (full height if far, cut down if near). */
+  private drawDoor(far: boolean, H: number, theme: (typeof THEME_MAP)[string]): void {
     const ctx = this.ctx;
     const g = this.game;
-    const H = WALL_H;
-    const wall = (x0: number, y0: number, x1: number, y1: number, color: string, h = H) => {
-      const a = iso(x0, y0, 0);
-      const b = iso(x1, y1, 0);
-      ctx.fillStyle = color;
+    const wide = this.features.has('wide_door');
+    const near = g.world.customers.some((c) => Math.abs(c.pos.x - 0) < 1.3 && Math.abs(c.pos.y - (DOOR_TILE.y + 0.5)) < 1);
+    this.door += ((near ? 1 : 0) - this.door) * 0.15;
+    const y0 = DOOR_TILE.y;
+    const y1 = DOOR_TILE.y + 1;
+    const post = (y: number) => {
+      const a = iso(0, y, 0);
+      const b = iso(0, y, H);
+      ctx.strokeStyle = theme.trim;
+      ctx.lineWidth = wide ? 5 : 4;
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
-      ctx.lineTo(b.x, b.y - h);
-      ctx.lineTo(a.x, a.y - h);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = theme.wallTop;
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y - h);
-      ctx.lineTo(b.x, b.y - h);
-      ctx.lineTo(b.x, b.y - h - 5);
-      ctx.lineTo(a.x, a.y - h - 5);
-      ctx.closePath();
-      ctx.fill();
+      ctx.stroke();
     };
-    // Back wall (y = 0), lit
-    for (let x = 0; x < S; x++) {
-      wall(x, 0, x + 1, 0, x === STOCKROOM_TILE.x ? shade(theme.wall, -0.05) : theme.wall);
-      if (x === STOCKROOM_TILE.x) {
-        const a = iso(x + 0.2, 0);
-        const b = iso(x + 0.8, 0);
-        ctx.fillStyle = shade(theme.trim, -0.2);
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.lineTo(b.x, b.y - 34);
-        ctx.lineTo(a.x, a.y - 34);
-        ctx.closePath();
-        ctx.fill();
-        const m = iso(x + 0.5, 0, 28);
-        badge(ctx, t('world.staff'), m.x, m.y, '#2b2d42', '#fff', 6);
-      } else if (x % 2 === 0 || x === S - 1) {
-        // window
-        const a = iso(x + 0.25, 0, 16);
-        const b = iso(x + 0.75, 0, 16);
-        ctx.fillStyle = '#bde0fe';
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.lineTo(b.x, b.y - 18);
-        ctx.lineTo(a.x, a.y - 18);
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
-    }
-    // Left wall (x = 0), darker, with the entrance
-    for (let y = 0; y < S; y++) {
-      if (y === DOOR_TILE.y) continue;
-      wall(0, y, 0, y + 1, shade(theme.wall, -0.15));
-    }
-    // Door frame + sliding doors
-    const near = g.world.customers.some((c) => Math.abs(c.pos.x - 0) < 1.3 && Math.abs(c.pos.y - (DOOR_TILE.y + 0.5)) < 1);
-    this.door += ((near ? 1 : 0) - this.door) * Math.min(1, 0.15 * 60 * (1 / 60));
-    const d0 = iso(0, DOOR_TILE.y);
-    const d1 = iso(0, DOOR_TILE.y + 1);
-    ctx.fillStyle = theme.trim;
-    ctx.fillRect(d0.x - 2, d0.y - H, 4, H);
-    ctx.fillRect(d1.x - 2, d1.y - H, 4, H);
-    wall(0, DOOR_TILE.y, 0, DOOR_TILE.y + 1, theme.trim, 0);
-    const top0 = iso(0, DOOR_TILE.y, H);
-    const top1 = iso(0, DOOR_TILE.y + 1, H);
-    ctx.fillStyle = theme.trim;
-    ctx.beginPath();
-    ctx.moveTo(top0.x, top0.y);
-    ctx.lineTo(top1.x, top1.y);
-    ctx.lineTo(top1.x, top1.y + 8);
-    ctx.lineTo(top0.x, top0.y + 8);
-    ctx.closePath();
-    ctx.fill();
+    post(y0);
+    post(y1);
+    if (!far) return;
+    // header above the opening (taller and two-tone from the Expanded Shop up)
+    this.wallQuad(0, y0, 0, y1, H - (wide ? 12 : 8), H + 5, theme.trim);
+    if (wide) this.wallQuad(0, y0, 0, y1, H - 12, H - 9, this.features.has('gold_cornice') ? '#ffd166' : shade(theme.trim, -0.25));
     const open = this.door * 0.42;
-    for (const [s, e] of [
+    for (const [s0, e0] of [
       [0.05, 0.5 - open],
       [0.5 + open, 0.95],
     ]) {
-      if (e <= s) continue;
-      const a = iso(0, DOOR_TILE.y + s);
-      const b = iso(0, DOOR_TILE.y + e);
-      ctx.fillStyle = 'rgba(173,232,244,0.55)';
+      if (e0 <= s0) continue;
+      this.wallQuad(0, y0 + s0, 0, y0 + e0, 0, H - 8, 'rgba(173,232,244,0.55)');
+      const a = iso(0, y0 + s0, 0);
+      const b = iso(0, y0 + e0, 0);
+      const c = iso(0, y0 + e0, H - 8);
+      const d = iso(0, y0 + s0, H - 8);
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+      ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
-      ctx.lineTo(b.x, b.y - H + 8);
-      ctx.lineTo(a.x, a.y - H + 8);
+      ctx.lineTo(c.x, c.y);
+      ctx.lineTo(d.x, d.y);
       ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-      ctx.lineWidth = 1;
       ctx.stroke();
     }
-    // OPEN / CLOSED sign (tap target in the tutorial)
+  }
+
+  /** OPEN/CLOSED sign (tap target) and the shop-name sign. Billboards, always on top so they stay readable. */
+  private drawSigns(S: number, theme: (typeof THEME_MAP)[string]): void {
+    const ctx = this.ctx;
+    const g = this.game;
     const sp = this.signPos();
     const isOpen = g.shop.open;
     const pulse = this.highlightSign && !this.reducedMotion ? 1 + 0.12 * Math.sin(this.time * 8) : 1;
@@ -695,51 +895,65 @@ export class Renderer {
     ctx.textBaseline = 'middle';
     ctx.fillText(isOpen ? t('world.open') : t('world.closed'), 0, 1);
     ctx.restore();
-    // shop sign on the back wall
-    const mid = iso(Math.max(1.6, S * 0.62), 0, H + 18);
+    // shop sign above the north wall, sized by tier
+    const grand = this.features.has('grand_sign');
+    const tier = tierOfStage(g.shop.stage);
+    const mid = this.nameSignPos(S);
     const name = t(`location.${g.shop.locationId}`);
-    ctx.font = '900 10px Nunito, system-ui, sans-serif';
+    const fs = grand ? 12 : 10;
+    ctx.font = `900 ${fs}px Nunito, system-ui, sans-serif`;
     const w = Math.max(80, ctx.measureText(name).width + 34);
+    const h = grand ? 24 : 19;
     const sign = getSkin(this.activeSkin())?.sign;
-    roundRect(ctx, mid.x - w / 2, mid.y - 10, w, 19, 8);
+    roundRect(ctx, mid.x - w / 2, mid.y - h / 2, w, h, 8);
     ctx.save();
-    if (sign?.glow) {
-      ctx.shadowColor = sign.glow;
+    if (sign?.glow || grand) {
+      ctx.shadowColor = sign?.glow ?? 'rgba(255,209,102,0.8)';
       ctx.shadowBlur = 16;
     }
     ctx.fillStyle = sign?.fill ?? theme.trim;
     ctx.fill();
     ctx.restore();
-    roundRect(ctx, mid.x - w / 2, mid.y - 10, w, 19, 8);
-    ctx.strokeStyle = sign?.border ?? '#fff';
-    ctx.lineWidth = 2;
+    roundRect(ctx, mid.x - w / 2, mid.y - h / 2, w, h, 8);
+    ctx.strokeStyle = sign?.border ?? (grand ? '#ffd166' : '#fff');
+    ctx.lineWidth = grand ? 3 : 2;
     ctx.stroke();
     ctx.fillStyle = sign?.text ?? '#fff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(`${LOCATION_MAP[g.shop.locationId]?.icon ?? ''} ${name}`, mid.x, mid.y);
+    // tier plate under the name
+    if (g.shop.stage >= 2) badge(ctx, `${tier.icon} ${t(`tier.${tier.id}`)}`, mid.x, mid.y + h / 2 + 7, grand ? '#b8860b' : 'rgba(43,45,66,0.85)', '#fff', 7);
+  }
+
+  /** The shop-name sign hangs above a wall the camera can see (north wall by default). */
+  private nameSignPos(S: number): { x: number; y: number } {
+    const sides = this.wallSides(S);
+    const pick = ['N', 'E', 'S', 'W'].map((id) => sides.find((w) => w.id === id)!).find((w) => this.isFarWall(w)) ?? sides[0];
+    const u = pick.id === 'N' ? Math.max(1.6, S * 0.62) / S : 0.5;
+    return iso(pick.x0 + (pick.x1 - pick.x0) * u, pick.y0 + (pick.y1 - pick.y0) * u, this.wallH + 18);
   }
 
   signPos() {
-    return iso(0, DOOR_TILE.y + 1.5, WALL_H - 12);
+    return iso(0, DOOR_TILE.y + 1.5, this.wallH - 12);
   }
 
   // ------------------------------------------------------------ sortables
 
-  private drawSortables(inside: Customer[]): void {
+  private drawSortables(inside: Customer[], _S: number, _theme: (typeof THEME_MAP)[string]): void {
     const g = this.game;
     type Item = { d: number; draw: () => void };
     const items: Item[] = [];
     const owner = g.shopMgr.ownerCheckoutUid();
     for (const o of g.shop.objects) {
-      items.push({ d: o.x + o.y + 1.0, draw: () => this.drawObj(o, owner) });
+      items.push({ d: depth(o.x + 0.5, o.y + 0.5), draw: () => this.drawObj(o, owner) });
     }
-    for (const c of inside) items.push({ d: c.pos.x + c.pos.y, draw: () => this.drawCustomer(c) });
-    for (const e of g.world.employees) items.push({ d: e.pos.x + e.pos.y, draw: () => this.drawEmployee(e) });
+    for (const c of inside) items.push({ d: depth(c.pos.x, c.pos.y), draw: () => this.drawCustomer(c) });
+    for (const e of g.world.employees) items.push({ d: depth(e.pos.x, e.pos.y), draw: () => this.drawEmployee(e) });
     const crate = g.state.events.crate;
     if (crate) {
       items.push({
-        d: crate.x + crate.y + 1,
+        d: depth(crate.x + 0.5, crate.y + 0.5),
         draw: () => {
           const bob = Math.sin(this.time * 4) * 3;
           box(this.ctx, crate.x + 0.25, crate.y + 0.25, crate.x + 0.75, crate.y + 0.75, 20, '#c68b59', bob + 2);
@@ -934,7 +1148,7 @@ export class Renderer {
       if (Math.abs(w.x - p.x) < 24 && Math.abs(w.y - p.y) < 30) return { type: 'crate' };
     }
     // objects: front-most first
-    const objs = [...g.shop.objects].sort((a, b) => b.x + b.y - (a.x + a.y));
+    const objs = [...g.shop.objects].sort((a, b) => depth(b.x + 0.5, b.y + 0.5) - depth(a.x + 0.5, a.y + 0.5));
     for (const o of objs) {
       const base = iso(o.x + 0.5, o.y + 0.5);
       const h = objectHeight(o);

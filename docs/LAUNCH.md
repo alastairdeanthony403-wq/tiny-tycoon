@@ -15,6 +15,7 @@ provider, ad network, analytics provider or backend is configured in this reposi
 | Offline earnings (capped, collected once) | Yes | n/a |
 | Saves (versioned, checksum, backup, migration, damaged-save quarantine) | Yes (browser `localStorage`) | No cloud sync |
 | Cosmetic themes (Neon Nights, Golden Shelves), Gems, Premium Shop | Yes | Gem spending only |
+| 360° camera (rotate, tilt, pan, zoom) and five shop tiers | Yes — see [CAMERA_AND_EXPANSION.md](CAMERA_AND_EXPANSION.md) | n/a |
 | Real-money purchases | Adapter + controller + **test-only simulator** | **No** — needs StoreKit / Play Billing plugin and a verification backend ([MONETIZATION.md](MONETIZATION.md)) |
 | Rewarded ads (optional sale-price boost) | Rules + adapter + **development simulator** | **No** — needs an ad network SDK via `window.TinyTycoonAds` |
 | Analytics & crash reporting | Adapter, events, consent gate, error capture | **No** — no provider; events stay on the device |

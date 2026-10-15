@@ -3,11 +3,14 @@ import type { Dir, PlacedObject, ShopState } from '../core/types';
 import { DOOR_TILE, STOCKROOM_TILE } from '../core/state';
 import { Grid, accessTile } from './grid';
 import type { Vec } from './grid';
-import { OBJECT_MAP } from '../config/objects';
+import { OBJECTS, OBJECT_MAP } from '../config/objects';
+import { STAFF_MAP } from '../config/staff';
 import type { ObjectDef } from '../config/objects';
 import { PRODUCTS, getProduct } from '../config/products';
 import { DEPARTMENT_MAP } from '../config/departments';
 import { EXPANSIONS } from '../config/expansions';
+import { SHOP_TIERS, tierIndexOfStage, tierOfStage } from '../config/shopTiers';
+import type { ShopTierDef } from '../config/shopTiers';
 import { ECONOMY, scaledCost } from '../config/economy';
 
 export interface PlacementResult {
@@ -79,6 +82,7 @@ export class ShopManager {
     if (this.game.state.player.level < def.requiredLevel) return { ok: false, reason: 'level', cost };
     if (def.requiredDepartment && !this.shop.departments.includes(def.requiredDepartment)) return { ok: false, reason: 'department', cost };
     if (this.count(kind) >= def.maxCount) return { ok: false, reason: 'max', cost };
+    if (this.count(kind) >= this.maxCountFor(kind)) return { ok: false, reason: 'tier_cap', cost };
     if (this.shop.construction) return { ok: false, reason: 'construction', cost };
     if (!this.game.economy.canAfford(cost)) return { ok: false, reason: 'money', cost };
     return { ok: true, cost };
@@ -448,6 +452,7 @@ export class ShopManager {
     if (!e) return { ok: false, reason: 'max' };
     if (this.shop.construction) return { ok: false, reason: 'construction' };
     if (this.game.state.player.level < e.requiredLevel) return { ok: false, reason: 'level' };
+    if (e.requiredRevenue && this.game.state.player.lifetimeRevenue < e.requiredRevenue) return { ok: false, reason: 'revenue' };
     if (!this.game.economy.canAfford(this.expansionCost()!)) return { ok: false, reason: 'money' };
     return { ok: true };
   }
@@ -471,6 +476,7 @@ export class ShopManager {
   completeExpansion(): void {
     const c = this.shop.construction;
     if (!c) return;
+    const tierBefore = tierIndexOfStage(this.shop.stage);
     const stage = Math.min(EXPANSIONS.length - 1, c.targetStage);
     this.shop.stage = stage;
     this.shop.size = EXPANSIONS[stage].size;
@@ -479,7 +485,54 @@ export class ShopManager {
     this.autoPlacePending();
     this.game.progression.addXp(ECONOMY.xp.perExpansion);
     this.game.bus.emit('expansionCompleted', { size: this.shop.size });
+    const tierAfter = tierIndexOfStage(stage);
+    if (tierAfter > tierBefore) this.game.bus.emit('tierReached', { tier: SHOP_TIERS[tierAfter].id, stage });
     this.game.analytics('shop_expanded', { size: this.shop.size, location: this.shop.locationId });
+  }
+
+  // ------------------------------------------------------------- shop tiers
+
+  tier(stage = this.shop.stage): ShopTierDef {
+    return tierOfStage(stage);
+  }
+
+  /** How many of an object the current tier allows (checkouts and decorations scale with the tier). */
+  maxCountFor(kind: string, stage = this.shop.stage): number {
+    const def = OBJECT_MAP[kind];
+    if (!def) return 0;
+    const tier = tierOfStage(stage);
+    if (def.category === 'checkout') return Math.min(def.maxCount, tier.checkoutCap);
+    if (def.category === 'decor') return Math.ceil(def.maxCount * tier.decorCapMult);
+    return def.maxCount;
+  }
+
+  /** Real numbers describing the shop at a stage (used by the expansion panel and its preview). */
+  layoutStats(stage = this.shop.stage) {
+    const size = EXPANSIONS[stage]?.size ?? this.shop.size;
+    const tier = tierOfStage(stage);
+    const g = this.game;
+    let staffCap = 0;
+    for (const type of ['cashier', 'stocker', 'cleaner', 'chef', 'manager'] as const) {
+      const def = STAFF_MAP[type];
+      if (!def) continue;
+      // cashiers/chefs depend on counters/machines; the others on the stage
+      staffCap += type === 'cashier' || type === 'chef' ? g.employees.maxStaff(type) : Math.floor(def.maxBase + stage * def.maxPerStage);
+    }
+    let displayCap = 0;
+    for (const o of this.displays()) displayCap += this.capacity(o);
+    const used = this.shop.objects.length;
+    return {
+      size,
+      area: size * size,
+      tier,
+      wallH: tier.wallH,
+      checkoutCap: this.maxCountFor('checkout', stage),
+      decorCap: OBJECTS.filter((o) => o.category === 'decor' && !o.entitlement).reduce((n, o) => n + this.maxCountFor(o.id, stage), 0),
+      staffCap,
+      objects: used,
+      displays: this.displays().length,
+      displayCapacity: displayCap,
+    };
   }
 
   // ---------------------------------------------------------------- dirt

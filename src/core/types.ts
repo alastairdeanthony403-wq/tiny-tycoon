@@ -130,6 +130,21 @@ export interface SettingsState {
   graphics: 'low' | 'high';
   /** Opt-in for sending anonymous analytics to a configured provider (off by default). */
   analyticsConsent: boolean;
+  /** Camera drag/rotate speed multiplier. */
+  cameraSensitivity: number;
+  /** What a one-finger / left-button drag does. */
+  cameraDrag: 'orbit' | 'pan';
+  /** Restore the last camera angle, zoom and pan when returning. */
+  rememberCamera: boolean;
+}
+
+/** Last camera view (only used when settings.rememberCamera is on). */
+export interface CameraState {
+  yaw: number;
+  pitch: number;
+  zoom: number;
+  panX: number;
+  panY: number;
 }
 
 export interface ActiveEvent {
@@ -234,6 +249,7 @@ export interface GameState {
   monetization: MonetizationState;
   missions: MissionsState;
   ads: AdsState;
+  camera?: CameraState;
   settings: SettingsState;
   stats: Stats;
   events: EventsState;

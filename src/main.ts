@@ -139,6 +139,7 @@ class App {
     this.ads = new AdController(() => this.game, createAdProvider(), (n, p) => this.analytics.track(n, p));
     const canvas = document.getElementById('game') as HTMLCanvasElement;
     this.renderer = new Renderer(canvas, this.game);
+    this.restoreCamera();
     this.ui = new UIManager(document.getElementById('ui')!, canvas, this.game, this.renderer, this.audio, this.haptics, this.notifications, {
       debugEnabled: import.meta.env.DEV,
       store: () => this.store,
@@ -204,6 +205,12 @@ class App {
     requestAnimationFrame((t) => this.frame(t));
   }
 
+  private restoreCamera(): void {
+    const st = this.game.state;
+    if (st.settings.rememberCamera && st.camera) this.renderer.camera.restore(st.camera);
+    else this.renderer.camera.resetView();
+  }
+
   private makeGame(state = createInitialState()): Game {
     const g = new Game(state, { analytics: (n, p) => this.analytics.track(n, p) });
     this.unsubSave?.();
@@ -245,6 +252,8 @@ class App {
     if (settings) state.settings = settings;
     this.game = this.makeGame(state);
     this.renderer.setGame(this.game);
+    this.renderer.camera.resetView();
+    this.renderer.camera.snap();
     this.ui.setGame(this.game);
     this.save();
     this.analytics.track('game_started', {});
@@ -257,6 +266,9 @@ class App {
 
   save(): void {
     if (!this.game) return;
+    // Camera view is a preference: kept only when "remember camera view" is on.
+    if (this.renderer && this.game.state.settings.rememberCamera) this.game.state.camera = this.renderer.camera.pose();
+    else delete this.game.state.camera;
     if (this.saves.save(this.game.state, Date.now())) return;
     console.warn('[save] failed', this.saves.lastError);
     this.analytics.track('save_failed', { reason: String(this.saves.lastError ?? '').slice(0, 80) });

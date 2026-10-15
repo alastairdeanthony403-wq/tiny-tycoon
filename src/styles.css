@@ -460,3 +460,26 @@ html.reduce-motion *, html.reduce-motion *::before { animation-duration: 0.001s 
 .ad-card { flex-wrap: wrap; }
 .ad-card .card-main { flex: 1 1 170px; }
 .ad-card > .btn { flex: 1 1 100%; }
+
+/* Camera controls: compact column at the right edge, above whatever bottom chrome is open. */
+.cam-ctrl { position: absolute; right: calc(8px + env(safe-area-inset-right, 0px)); bottom: calc(var(--chrome-bottom, calc(var(--nav-h) + 16px + var(--safe-b))) + 4px); display: flex; flex-direction: column; gap: 6px; align-items: flex-end; z-index: 3; transition: bottom 0.2s ease; }
+.cam-btn { width: 42px; height: 42px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, 0.9); box-shadow: var(--shadow); font-size: 1.1rem; font-weight: 900; color: var(--ink); cursor: pointer; display: grid; place-items: center; touch-action: manipulation; }
+.cam-btn:active { transform: scale(0.94); }
+.cam-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.cam-more { display: grid; grid-template-columns: repeat(3, 42px); gap: 6px; background: rgba(255, 253, 247, 0.92); padding: 6px; border-radius: 18px; box-shadow: var(--shadow); }
+.cam-ctrl.hidden-soft { opacity: 0; pointer-events: none; }
+@media (max-height: 520px) {
+  .cam-ctrl { flex-direction: row-reverse; align-items: flex-end; }
+  .cam-btn { width: 38px; height: 38px; }
+  .cam-more { grid-template-columns: repeat(6, 38px); }
+}
+
+/* Shop expansion section */
+.tier-stats { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.plan-preview { width: 112px; height: 112px; display: block; margin: 6px 0; border-radius: 10px; background: #f8f9fa; }
+.reqs { display: flex; flex-direction: column; gap: 4px; margin: 4px 0; }
+.req-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(90px, 1.2fr); gap: 6px; align-items: center; font-size: 0.78rem; font-weight: 800; }
+.req-row.met { color: var(--good-dark); }
+.req-row.unmet { color: var(--bad-dark); }
+.gains { margin: 4px 0 0; padding-left: 1.1em; font-size: 0.78rem; color: var(--ink-soft); display: flex; flex-direction: column; gap: 2px; }
+.modal .gains { text-align: left; color: var(--ink); font-size: 0.9rem; }

@@ -175,7 +175,14 @@ export function validate(raw: any, now = Date.now()): GameState {
     screenShake: bool(set.screenShake, true),
     graphics: set.graphics === 'low' ? 'low' : 'high',
     analyticsConsent: bool(set.analyticsConsent, false),
+    cameraSensitivity: num(set.cameraSensitivity, 1, 0.25, 3),
+    cameraDrag: set.cameraDrag === 'pan' ? 'pan' : 'orbit',
+    rememberCamera: bool(set.rememberCamera, true),
   };
+  const cam = obj(r.camera);
+  if (r.camera && Number.isFinite(cam.yaw) && Number.isFinite(cam.pitch)) {
+    st.camera = { yaw: num(cam.yaw, 0, -1e6, 1e6) % 360, pitch: num(cam.pitch, 30, 20, 60), zoom: num(cam.zoom, 1, 0.5, 3), panX: num(cam.panX, 0, -50, 50), panY: num(cam.panY, 0, -50, 50) };
+  }
   const stats = obj(r.stats);
   const ds2 = defaultStats();
   st.stats = { ...ds2 };
