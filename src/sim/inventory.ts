@@ -66,7 +66,7 @@ export class InventoryManager {
   }
 
   /** Player taps a displayer: shelves refill instantly, machines get a quick batch. */
-  manualRestock(uid: number): boolean {
+  manualRestock(uid: number, auto = false): boolean {
     const o = this.game.shopMgr.getObject(uid);
     if (!o || !this.canManualRestock(o)) return false;
     const cap = this.game.shopMgr.capacity(o);
@@ -77,10 +77,10 @@ export class InventoryManager {
     } else {
       o.stock = cap;
       this.game.world.manualCooldowns.set(uid, this.game.simTime + ECONOMY.restock.manualCooldown);
-      this.game.state.stats.manualRestocks++;
+      if (!auto) this.game.state.stats.manualRestocks++;
     }
     this.game.world.lowStockNotified.delete(uid);
-    this.game.bus.emit('restocked', { uid, x: o.x, y: o.y, amount: o.stock - before, manual: true });
+    this.game.bus.emit('restocked', { uid, x: o.x, y: o.y, amount: o.stock - before, manual: !auto });
     return true;
   }
 

@@ -1,6 +1,7 @@
 import type { Game } from './game';
 import { ACHIEVEMENTS, MILESTONES } from '../config/achievements';
 import { runCheck } from './checks';
+import { EARNED_GEMS_PER_ACHIEVEMENT_STAR, EARNED_GEMS_PER_MILESTONE } from '../monetization/catalog';
 
 /** AchievementManager: achievements (claimable, permanent bonus) and celebratory milestones. */
 export class AchievementManager {
@@ -31,6 +32,7 @@ export class AchievementManager {
       if (runCheck(this.game, m.check, m.arg) >= m.target) {
         prog.milestones[m.id] = true;
         if (m.money) this.game.economy.earn(m.money, false);
+        this.game.monetization.earnGems(EARNED_GEMS_PER_MILESTONE, `milestone:${m.id}`);
         this.game.bus.emit('milestone', { id: m.id });
       }
     }
@@ -48,6 +50,7 @@ export class AchievementManager {
     if (!a || !st?.unlocked || st.claimed) return false; // no duplicate rewards
     st.claimed = true;
     this.game.economy.addStars(a.stars);
+    this.game.monetization.earnGems(a.stars * EARNED_GEMS_PER_ACHIEVEMENT_STAR, `achievement:${a.id}`);
     if (a.unlockTheme && !this.game.state.cosmetics.unlockedThemes.includes(a.unlockTheme)) this.game.state.cosmetics.unlockedThemes.push(a.unlockTheme);
     if (a.title) this.game.state.player.title = a.title;
     this.game.bus.emit('achievementClaimed', { id, stars: a.stars });

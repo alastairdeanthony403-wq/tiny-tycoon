@@ -6,6 +6,7 @@ import { EVENT_MAP } from '../config/events';
 import { LOCATION_MAP } from '../config/locations';
 import { OBJECT_MAP } from '../config/objects';
 import { activeSeasons } from '../config/seasons';
+import type { StoreManager } from './store';
 
 /** Aggregates every multiplier from upgrades, perks, events, location and achievements. */
 export class Modifiers {
@@ -54,7 +55,9 @@ export class Modifiers {
       (1 + this.franchiseBonus()) *
       (1 + this.achievementBonus()) *
       this.location.spendMult *
-      this.eventEffect('priceMult')
+      this.eventEffect('priceMult') *
+      (this.game.ads?.priceMult() ?? 1) *
+      (this.game.store?.boostMult('price') ?? 1)
     );
   }
 
@@ -77,12 +80,13 @@ export class Modifiers {
       variety *
       this.location.trafficMult *
       (1 + this.perk('fame')) *
-      this.eventEffect('spawnMult')
+      this.eventEffect('spawnMult') *
+      (this.game.store?.boostMult('spawn') ?? 1)
     );
   }
 
   patienceMult(): number {
-    return (1 + this.upgrade('comfort')) * this.eventEffect('patienceMult') * (1 + this.managerBoost() * 0.5);
+    return (1 + this.upgrade('comfort')) * this.eventEffect('patienceMult') * (1 + this.managerBoost() * 0.5) * (1 + this.storePerk('patience'));
   }
 
   passiveRestockMult(): number {
@@ -90,11 +94,11 @@ export class Modifiers {
   }
 
   capacityMult(): number {
-    return 1 + this.upgrade('storage');
+    return (1 + this.upgrade('storage')) * (1 + this.storePerk('capacity'));
   }
 
   staffSpeedMult(): number {
-    return (1 + this.perk('staff_training')) * (1 + this.managerBoost());
+    return (1 + this.perk('staff_training')) * (1 + this.managerBoost()) * (1 + this.storePerk('staff_speed')) * (this.game.store?.boostMult('staff_speed') ?? 1);
   }
 
   customerSpeedMult(): number {
@@ -127,7 +131,22 @@ export class Modifiers {
 
   offlineCapSeconds(): number {
     const hours = Math.min(ECONOMY.offline.maxCapHours, ECONOMY.offline.baseCapHours + (this.game.state.globalUpgrades.night_shift ?? 0) + (this.game.state.perks.offline_office ?? 0));
-    return hours * 3600;
+    return (hours + this.storePerk('offline_hours')) * 3600;
+  }
+
+  /** Gem upgrade bonus (Premium Store → Upgrades). */
+  storePerk(effect: Parameters<StoreManager['perkBonus']>[0]): number {
+    return this.game.store?.perkBonus(effect) ?? 0;
+  }
+
+  /** Checkout service speed multiplier from Gem upgrades. */
+  checkoutSpeedMult(): number {
+    return 1 + this.storePerk('checkout_speed');
+  }
+
+  /** Wage multiplier from Gem upgrades (never below half). */
+  wageMult(): number {
+    return Math.max(0.5, 1 - this.storePerk('wages'));
   }
 
   seasons() {

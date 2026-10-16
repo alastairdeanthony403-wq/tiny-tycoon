@@ -14,7 +14,7 @@ export interface Reward {
 }
 
 /** Where the tutorial pointer should point while this quest is active. */
-export type HintTarget = 'openSign' | 'shelf' | 'checkout' | 'build' | 'nav:shop' | 'nav:upgrades' | 'nav:products' | 'nav:staff' | 'nav:map' | 'expand';
+export type HintTarget = 'pauseMenu' | 'gems' | 'openSign' | 'shelf' | 'checkout' | 'build' | 'nav:shop' | 'nav:upgrades' | 'nav:products' | 'nav:staff' | 'nav:map' | 'expand';
 
 export interface QuestDef {
   id: string;
@@ -35,6 +35,9 @@ export const MAIN_QUESTS: QuestDef[] = [
   { id: 'expand_1', goal: { type: 'check', check: 'stage', amount: 1 }, reward: { money: 150, xp: 20 }, hint: 'expand', tutorial: true },
   { id: 'drinks_dept', goal: { type: 'check', check: 'departments', amount: 2 }, reward: { money: 100, xp: 15 }, hint: 'nav:shop', tutorial: true },
   { id: 'hire_1', goal: { type: 'check', check: 'staffCount', amount: 1 }, reward: { money: 250, xp: 20 }, hint: 'nav:staff', tutorial: true },
+  // Inserted in save v4 (MIGRATIONS[3] shifts older saves past these two steps).
+  { id: 'view_achievements', goal: { type: 'check', check: 'flag', arg: 'viewedAchievements', amount: 1 }, reward: { money: 100, xp: 15 }, hint: 'pauseMenu', tutorial: true },
+  { id: 'view_cosmetics', goal: { type: 'check', check: 'flag', arg: 'viewedCosmetics', amount: 1 }, reward: { money: 150, xp: 15 }, hint: 'gems', tutorial: true },
   { id: 'serve_25', goal: { type: 'stat', stat: 'customersServed', amount: 25 }, reward: { stars: 1, xp: 15 } },
   { id: 'revenue_1k', goal: { type: 'check', check: 'lifetimeRevenue', amount: 1000 }, reward: { unlockProduct: 'chocolate', xp: 20 } },
   { id: 'marketing_2', goal: { type: 'check', check: 'upgradeLevel', arg: 'marketing', amount: 2 }, reward: { money: 200, xp: 20 }, hint: 'nav:upgrades' },

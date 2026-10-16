@@ -1,6 +1,7 @@
 import type { Game } from './game';
 import { OBJECT_MAP } from '../config/objects';
 import { PRODUCT_MAP } from '../config/products';
+import { tierIndexOfStage } from '../config/shopTiers';
 
 /**
  * Named, data-addressable checks used by quests, achievements and milestones.
@@ -24,6 +25,11 @@ export const CHECKS: Record<string, (g: Game, arg?: string) => number> = {
   repTier: (g) => g.progression.repTier(),
   locationsOwned: (g) => g.state.progression.unlockedLocations.length,
   prestigeCount: (g) => g.state.player.prestigeCount,
+  shopTier: (g) => Math.max(...Object.values(g.state.shops).map((s) => tierIndexOfStage(s.stage))),
+  displayCount: (g) => g.shopMgr.displays().length,
+  tutorialDone: (g) => (g.state.progression.tutorialDone ? 1 : 0),
+  upgradesBought: (g) => g.state.stats.upgradesBought,
+  premiumThemesOwned: (g) => ['cosmetic_neon_nights', 'cosmetic_golden_shelves', 'cosmetic_cozy_autumn', 'cosmetic_ocean_breeze'].filter((id) => g.state.monetization.entitlements[id]).length,
   flag: (g, f) => (f && g.state.progression.flags[f] ? 1 : 0),
   stat: (g, s) => statValue(g, s ?? ''),
 };

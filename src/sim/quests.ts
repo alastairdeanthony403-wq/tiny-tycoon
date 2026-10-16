@@ -88,12 +88,24 @@ export class QuestManager {
       if (def?.tutorial && !MAIN_QUESTS[prog.mainQuestIndex + 1]?.tutorial && !prog.tutorialDone) {
         prog.tutorialDone = true;
         this.game.analytics('tutorial_completed', {});
+        this.game.bus.emit('tutorialCompleted', { skipped: false });
       }
       prog.mainQuestIndex++;
       this.startMain();
     }
     this.evaluate();
     return true;
+  }
+
+  /** Player chose to skip the guided tutorial: unlocks side goals and missions immediately. */
+  skipTutorial(): void {
+    const prog = this.game.state.progression;
+    if (prog.tutorialDone) return;
+    prog.tutorialDone = true;
+    prog.flags.tutorialHidden = true;
+    this.game.analytics('tutorial_skipped', { step: prog.mainQuestIndex });
+    this.game.bus.emit('tutorialCompleted', { skipped: true });
+    this.evaluate();
   }
 
   startMain(): void {

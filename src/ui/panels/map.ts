@@ -1,7 +1,8 @@
+import { LOCATION_ART } from '../../assets/locations';
 import { Panel } from '../panel';
 import type { AppApi } from '../api';
 import { el, setText } from '../dom';
-import { UpgradeButton, card, iconBox, sectionTitle, tag } from '../components';
+import { UpgradeButton, card, iconBox, artIcon, sectionTitle, tag } from '../components';
 import { LOCATIONS } from '../../config/locations';
 import { PERKS } from '../../config/prestige';
 import { ECONOMY } from '../../config/economy';
@@ -64,7 +65,7 @@ export class MapPanel extends Panel {
         if (g.progression.repTier() < l.requiredRepTier) reqs.push(tag(`🔒 ${'★'.repeat(l.requiredRepTier)} ${t(`rep.${l.requiredRepTier}`)}`, 'locked'));
         right = el('div', { class: 'col' }, btn.el, ...reqs);
       }
-      out.push(card(`loc-card ${current ? 'current' : ''}`, iconBox(l.icon), el('div', { class: 'card-main' }, el('b', {}, t(`location.${l.id}`)), el('small', {}, t(`location.${l.id}.desc`)), traits), right));
+      out.push(card(`loc-card ${current ? 'current' : ''}`, artIcon(`location.${LOCATION_ART[l.id] ?? 'town'}`, l.icon), el('div', { class: 'card-main' }, el('b', {}, t(`location.${l.id}`)), el('small', {}, t(`location.${l.id}.desc`)), traits), right));
     }
 
     // ---- Franchise / prestige

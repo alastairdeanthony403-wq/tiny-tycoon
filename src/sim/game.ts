@@ -19,6 +19,10 @@ import { LocationManager } from './locations';
 import { PrestigeManager } from './prestige';
 import { OfflineManager } from './offline';
 import { DebugTools } from './debug';
+import { MonetizationManager } from './monetization';
+import { MissionManager } from './missions';
+import { StoreManager } from './store';
+import { AdRewardManager } from './ads';
 import { createShop } from '../core/state';
 
 export interface GameOptions {
@@ -57,6 +61,10 @@ export class Game {
   prestige: PrestigeManager;
   offline: OfflineManager;
   debug: DebugTools;
+  monetization: MonetizationManager;
+  missions: MissionManager;
+  ads: AdRewardManager;
+  store: StoreManager;
 
   simTime = 0;
   speed = 1;
@@ -88,6 +96,11 @@ export class Game {
     this.prestige = new PrestigeManager(this);
     this.offline = new OfflineManager(this);
     this.debug = new DebugTools(this);
+    this.monetization = new MonetizationManager(this);
+    this.store = new StoreManager(this);
+    this.monetization.sanitize();
+    this.missions = new MissionManager(this);
+    this.ads = new AdRewardManager(this);
     this.ensureShop();
     this.rebuildWorld();
     this.quests.startMain();
@@ -166,6 +179,10 @@ export class Game {
     this.safe('events', () => this.events.tick(dt));
     this.safe('quests', () => this.quests.tick(dt));
     this.safe('achievements', () => this.achievements.tick(dt));
+    this.safe('missions', () => this.missions.tick(dt));
+    this.safe('ads', () => this.ads.tick(dt));
+    this.safe('store', () => this.store.tick(dt));
+    if (this.world.tickCount % 10 === 0) this.safe('monetization', () => this.monetization.tick());
   }
 
   /** Simulate many seconds quickly (tests / debug). */
@@ -179,6 +196,7 @@ export class Game {
       fn();
     } catch (e) {
       this.log(where, e instanceof Error ? e.stack ?? e.message : String(e));
+      this.analytics('client_error', { where: `sim:${where}`, message: (e instanceof Error ? e.message : String(e)).slice(0, 200) });
     }
   }
 

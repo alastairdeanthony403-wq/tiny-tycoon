@@ -2,7 +2,7 @@ import type { Game } from '../sim/game';
 import type { PlacedObject } from '../core/types';
 import type { AppApi } from './api';
 import { el, setText, clear, guarded, toggle } from './dom';
-import { UpgradeButton, ProgressBar, iconBox, tag } from './components';
+import { UpgradeButton, ProgressBar, artIcon, tag } from './components';
 import { OBJECT_MAP, CHECKOUT_TIER_KEYS } from '../config/objects';
 import { getProduct } from '../config/products';
 import { formatMoney } from '../core/format';
@@ -81,7 +81,7 @@ export class Inspector {
     const p = getProduct(o.productId);
     const out: Node[] = [];
     const tierName = o.kind === 'checkout' ? t(`checkout.${CHECKOUT_TIER_KEYS[o.tier]}`) : `${t('ui.lv')} ${o.tier + 1}`;
-    out.push(el('div', { class: 'insp-head' }, iconBox(p?.icon ?? def.icon), el('div', {}, el('b', {}, t(`object.${o.kind}`)), ' ', tag(tierName, 'lv'), p ? el('div', { class: 'insp-sub' }, `${p.icon} ${t(`product.${p.id}`)} · ${formatMoney(g.economy.unitPrice(p.id))}`) : null)));
+    out.push(el('div', { class: 'insp-head' }, artIcon(p ? `product.${p.id}` : `furniture.${o.kind}`, p?.icon ?? def.icon), el('div', {}, el('b', {}, t(`object.${o.kind}`)), ' ', tag(tierName, 'lv'), p ? el('div', { class: 'insp-sub' }, `${p.icon} ${t(`product.${p.id}`)} · ${formatMoney(g.economy.unitPrice(p.id))}`) : null)));
 
     if (def.category === 'display') {
       const bar = new ProgressBar('stock');

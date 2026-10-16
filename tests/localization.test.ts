@@ -13,6 +13,7 @@ import { EVENTS } from '../src/config/events';
 import { MAIN_QUESTS, SIDE_QUEST_TEMPLATES } from '../src/config/quests';
 import { CUSTOMER_TYPES } from '../src/config/customers';
 import { t, registerLocale, setLanguage } from '../src/core/i18n';
+import { PREMIUM_CATALOG } from '../src/monetization/catalog';
 
 /** Every data-driven entry must have its localization keys (no raw keys shown to players). */
 describe('localization', () => {
@@ -43,6 +44,10 @@ describe('localization', () => {
   for (const s of SIDE_QUEST_TEMPLATES) need.push(`quest.${s.id}`);
   for (const c of CUSTOMER_TYPES) need.push(`customer.${c.id}`);
   for (let i = 1; i <= 5; i++) need.push(`rep.${i}`);
+  for (const p of PREMIUM_CATALOG) {
+    need.push(`premium.${p.id}.name`, `premium.${p.id}.desc`, `premium.${p.id}.long`, ...p.contents);
+    if (p.grant.kind === 'outfits') for (const o of p.grant.outfits) need.push(`premium.outfit.${o}`);
+  }
 
   it('has every data-driven key', () => {
     const missing = need.filter((k) => !(k in en));

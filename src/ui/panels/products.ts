@@ -1,7 +1,7 @@
 import { Panel } from '../panel';
 import type { AppApi } from '../api';
 import { el, setText } from '../dom';
-import { UpgradeButton, card, iconBox, sectionTitle, tag } from '../components';
+import { UpgradeButton, card, artIcon, sectionTitle, tag } from '../components';
 import { PRODUCTS } from '../../config/products';
 import type { ProductDef } from '../../config/products';
 import { formatMoney } from '../../core/format';
@@ -71,6 +71,6 @@ export class ProductsPanel extends Panel {
       if (!g.shop.departments.includes(p.department)) reqs.push(tag(`🔒 ${t(`dept.${p.department}`)}`, 'locked'));
       right = el('div', { class: 'col' }, btn.el, ...reqs);
     }
-    return card(unlocked ? '' : 'locked-card', iconBox(p.icon, `rar-${p.rarity}`), el('div', { class: 'card-main' }, el('b', {}, t(`product.${p.id}`), ' ', demand), el('small', {}, t(`product.${p.id}.desc`)), prices, el('div', { class: 'tags' }, ...tags)), right);
+    return card(unlocked ? '' : 'locked-card', artIcon(`product.${p.id}`, p.icon, `rar-${p.rarity}`), el('div', { class: 'card-main' }, el('b', {}, t(`product.${p.id}`), ' ', demand), el('small', {}, t(`product.${p.id}.desc`)), prices, el('div', { class: 'tags' }, ...tags)), right);
   }
 }

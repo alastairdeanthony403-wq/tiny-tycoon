@@ -1,7 +1,7 @@
 import { Panel } from '../panel';
 import type { AppApi } from '../api';
 import { el, setText } from '../dom';
-import { UpgradeButton, card, iconBox, sectionTitle, tag } from '../components';
+import { UpgradeButton, card, iconBox, artIcon, sectionTitle, tag } from '../components';
 import { UPGRADES } from '../../config/upgrades';
 import { OBJECT_MAP } from '../../config/objects';
 import { getProduct } from '../../config/products';
@@ -75,7 +75,7 @@ export class UpgradesPanel extends Panel {
         setText(prev, objectUpgradePreview(g, o));
       });
       const p = getProduct(o.productId);
-      out.push(card('', iconBox(p?.icon ?? def.icon), el('div', { class: 'card-main' }, el('b', {}, t(`object.${o.kind}`), ' ', lv), p ? el('small', {}, t(`product.${p.id}`)) : null, prev), btn.el));
+      out.push(card('', artIcon(p ? `product.${p.id}` : `furniture.${o.kind}`, p?.icon ?? def.icon), el('div', { class: 'card-main' }, el('b', {}, t(`object.${o.kind}`), ' ', lv), p ? el('small', {}, t(`product.${p.id}`)) : null, prev), btn.el));
     }
     return out;
   }

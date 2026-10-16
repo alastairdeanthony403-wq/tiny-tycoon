@@ -3,11 +3,14 @@ import type { Dir, PlacedObject, ShopState } from '../core/types';
 import { DOOR_TILE, STOCKROOM_TILE } from '../core/state';
 import { Grid, accessTile } from './grid';
 import type { Vec } from './grid';
-import { OBJECT_MAP } from '../config/objects';
+import { OBJECTS, OBJECT_MAP } from '../config/objects';
+import { STAFF_MAP } from '../config/staff';
 import type { ObjectDef } from '../config/objects';
 import { PRODUCTS, getProduct } from '../config/products';
 import { DEPARTMENT_MAP } from '../config/departments';
 import { EXPANSIONS } from '../config/expansions';
+import { SHOP_TIERS, tierIndexOfStage, tierOfStage } from '../config/shopTiers';
+import type { ShopTierDef } from '../config/shopTiers';
 import { ECONOMY, scaledCost } from '../config/economy';
 
 export interface PlacementResult {
@@ -75,9 +78,11 @@ export class ShopManager {
     const def = OBJECT_MAP[kind];
     if (!def) return { ok: false, reason: 'unknown', cost: Infinity };
     const cost = this.objectCost(kind);
+    if (def.entitlement && !this.game.monetization.owns(def.entitlement)) return { ok: false, reason: 'not_owned', cost };
     if (this.game.state.player.level < def.requiredLevel) return { ok: false, reason: 'level', cost };
     if (def.requiredDepartment && !this.shop.departments.includes(def.requiredDepartment)) return { ok: false, reason: 'department', cost };
     if (this.count(kind) >= def.maxCount) return { ok: false, reason: 'max', cost };
+    if (this.count(kind) >= this.maxCountFor(kind)) return { ok: false, reason: 'tier_cap', cost };
     if (this.shop.construction) return { ok: false, reason: 'construction', cost };
     if (!this.game.economy.canAfford(cost)) return { ok: false, reason: 'money', cost };
     return { ok: true, cost };
@@ -284,6 +289,47 @@ export class ShopManager {
     return true;
   }
 
+  /**
+   * Moves existing objects to the given positions in one step (saved layouts). Objects that no
+   * longer exist are skipped; anything not listed stays put. Fully validated: overlaps, bounds,
+   * access tiles, queue space and door connectivity. On any problem nothing changes.
+   */
+  applyLayout(entries: { uid: number; x: number; y: number; dir: Dir }[]): { ok: boolean; reason?: string } {
+    const shop = this.shop;
+    const byUid = new Map(entries.map((e) => [e.uid, e]));
+    const next = shop.objects.map((o) => {
+      const e = byUid.get(o.uid);
+      return e ? { ...o, x: e.x, y: e.y, dir: e.dir } : { ...o };
+    });
+    if (!entries.some((e) => shop.objects.some((o) => o.uid === e.uid))) return { ok: false, reason: 'nothing_to_move' };
+    const seen = new Set<string>();
+    for (const o of next) {
+      if (o.x < 0 || o.y < 0 || o.x >= shop.size || o.y >= shop.size) return { ok: false, reason: 'out_of_bounds' };
+      const k = `${o.x},${o.y}`;
+      if (seen.has(k)) return { ok: false, reason: 'occupied' };
+      seen.add(k);
+    }
+    const grid = this.buildGrid(next);
+    for (const o of next) {
+      const t = grid.get(o.x, o.y)!;
+      if (t.reserved === 'door' || t.reserved === 'stockroom') return { ok: false, reason: 'reserved' };
+      if (!OBJECT_MAP[o.kind]?.needsAccess) continue;
+      const a = accessTile(o);
+      const at = grid.get(a.x, a.y);
+      if (!at || at.occupied || at.reserved === 'door') return { ok: false, reason: 'no_access' };
+      if (o.kind === 'checkout' && (grid.queues.get(o.uid)?.length ?? 0) < 2) return { ok: false, reason: 'no_queue_space' };
+    }
+    if (!this.connectivityOk(grid, next)) return { ok: false, reason: 'blocks_path' };
+    for (const o of shop.objects) {
+      const n = next.find((x) => x.uid === o.uid)!;
+      o.x = n.x;
+      o.y = n.y;
+      o.dir = n.dir;
+    }
+    this.game.onLayoutChanged();
+    return { ok: true };
+  }
+
   canSell(uid: number): boolean {
     const o = this.getObject(uid);
     if (!o) return false;
@@ -398,7 +444,8 @@ export class ShopManager {
 
   expansionCost(): number | null {
     const e = this.nextExpansion();
-    return e ? Math.round(e.cost * this.costMult) : null;
+    // An Expansion Permit (Premium Store) takes a share off the cash price; it is used up by expand().
+    return e ? Math.round(e.cost * this.costMult * (1 - (this.game.store?.expansionDiscount() ?? 0))) : null;
   }
 
   canExpand(): { ok: boolean; reason?: string } {
@@ -406,6 +453,7 @@ export class ShopManager {
     if (!e) return { ok: false, reason: 'max' };
     if (this.shop.construction) return { ok: false, reason: 'construction' };
     if (this.game.state.player.level < e.requiredLevel) return { ok: false, reason: 'level' };
+    if (e.requiredRevenue && this.game.state.player.lifetimeRevenue < e.requiredRevenue) return { ok: false, reason: 'revenue' };
     if (!this.game.economy.canAfford(this.expansionCost()!)) return { ok: false, reason: 'money' };
     return { ok: true };
   }
@@ -414,6 +462,7 @@ export class ShopManager {
     if (!this.canExpand().ok) return false;
     const e = this.nextExpansion()!;
     if (!this.game.economy.spend(this.expansionCost()!, 'expansion')) return false;
+    this.game.store?.useExpansionPermit();
     this.shop.construction = { targetStage: this.shop.stage + 1, remaining: e.buildTime, duration: e.buildTime };
     this.game.bus.emit('expansionStarted', { size: e.size, duration: e.buildTime });
     return true;
@@ -429,6 +478,7 @@ export class ShopManager {
   completeExpansion(): void {
     const c = this.shop.construction;
     if (!c) return;
+    const tierBefore = tierIndexOfStage(this.shop.stage);
     const stage = Math.min(EXPANSIONS.length - 1, c.targetStage);
     this.shop.stage = stage;
     this.shop.size = EXPANSIONS[stage].size;
@@ -437,7 +487,54 @@ export class ShopManager {
     this.autoPlacePending();
     this.game.progression.addXp(ECONOMY.xp.perExpansion);
     this.game.bus.emit('expansionCompleted', { size: this.shop.size });
+    const tierAfter = tierIndexOfStage(stage);
+    if (tierAfter > tierBefore) this.game.bus.emit('tierReached', { tier: SHOP_TIERS[tierAfter].id, stage });
     this.game.analytics('shop_expanded', { size: this.shop.size, location: this.shop.locationId });
+  }
+
+  // ------------------------------------------------------------- shop tiers
+
+  tier(stage = this.shop.stage): ShopTierDef {
+    return tierOfStage(stage);
+  }
+
+  /** How many of an object the current tier allows (checkouts and decorations scale with the tier). */
+  maxCountFor(kind: string, stage = this.shop.stage): number {
+    const def = OBJECT_MAP[kind];
+    if (!def) return 0;
+    const tier = tierOfStage(stage);
+    if (def.category === 'checkout') return Math.min(def.maxCount, tier.checkoutCap);
+    if (def.category === 'decor') return Math.ceil(def.maxCount * tier.decorCapMult);
+    return def.maxCount;
+  }
+
+  /** Real numbers describing the shop at a stage (used by the expansion panel and its preview). */
+  layoutStats(stage = this.shop.stage) {
+    const size = EXPANSIONS[stage]?.size ?? this.shop.size;
+    const tier = tierOfStage(stage);
+    const g = this.game;
+    let staffCap = 0;
+    for (const type of ['cashier', 'stocker', 'cleaner', 'chef', 'manager'] as const) {
+      const def = STAFF_MAP[type];
+      if (!def) continue;
+      // cashiers/chefs depend on counters/machines; the others on the stage
+      staffCap += type === 'cashier' || type === 'chef' ? g.employees.maxStaff(type) : Math.floor(def.maxBase + stage * def.maxPerStage);
+    }
+    let displayCap = 0;
+    for (const o of this.displays()) displayCap += this.capacity(o);
+    const used = this.shop.objects.length;
+    return {
+      size,
+      area: size * size,
+      tier,
+      wallH: tier.wallH,
+      checkoutCap: this.maxCountFor('checkout', stage),
+      decorCap: OBJECTS.filter((o) => o.category === 'decor' && !o.entitlement).reduce((n, o) => n + this.maxCountFor(o.id, stage), 0),
+      staffCap,
+      objects: used,
+      displays: this.displays().length,
+      displayCapacity: displayCap,
+    };
   }
 
   // ---------------------------------------------------------------- dirt

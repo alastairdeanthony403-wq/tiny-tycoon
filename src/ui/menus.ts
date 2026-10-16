@@ -7,6 +7,10 @@ import { availableLanguages, t } from '../core/i18n';
 import { formatMoney, formatNumber } from '../core/format';
 import { ECONOMY } from '../config/economy';
 import type { Game } from '../sim/game';
+import type { AdController } from '../ads/controller';
+import type { MissionKind, MissionView } from '../sim/missions';
+import { ADS } from '../config/ads';
+import { formatDuration } from '../core/format';
 
 export type AchievementState = 'locked' | 'progress' | 'ready' | 'claimed';
 const STATE_ICON: Record<AchievementState, string> = { locked: '🔒', progress: '⏳', ready: '🎁', claimed: '✓' };
@@ -28,6 +32,10 @@ export interface MenuHooks {
   resetSave: () => void;
   requestNotifications: () => Promise<boolean>;
   hasSave: () => boolean;
+  ads: () => AdController;
+  analyticsProvider: () => string | null;
+  skipTutorial: () => void;
+  replayTutorialTips: () => void;
 }
 
 /** Full-screen overlays: main menu, pause, settings, achievements, credits. */
@@ -55,7 +63,8 @@ export class Menus {
     clear(this.el);
     this.el.append(el('div', { class: `menu menu-${id}`, role: 'dialog', 'aria-modal': 'true' }, ...content));
     this.el.classList.remove('hidden');
-    (this.el.querySelector('button') as HTMLButtonElement | null)?.focus();
+    // Focus for keyboard users without scrolling long lists away from their top.
+    (this.el.querySelector('button') as HTMLButtonElement | null)?.focus({ preventScroll: true });
   }
 
   private back(to: string | null): HTMLElement {
@@ -103,6 +112,8 @@ export class Menus {
         el('button', { class: 'btn btn-primary btn-big', onclick: () => this.close() }, `▶ ${t('menu.resume')}`),
         el('button', { class: 'btn btn-ghost', onclick: () => this.settings() }, `⚙️ ${t('menu.settings')}`),
         el('button', { class: 'btn btn-ghost', onclick: () => this.achievements() }, `🏆 ${t('menu.achievements')}`),
+        g.missions.available ? el('button', { class: 'btn btn-ghost', onclick: () => this.missions() }, `📅 ${t('missions.title')}`) : null,
+        el('button', { class: 'btn btn-ghost', onclick: () => this.help() }, `❓ ${t('help.title')}`),
         el('button', { class: 'btn btn-ghost', onclick: () => { this.hooks.saveNow(); this.app.toast(t('toast.saved'), '💾', 'good'); } }, `💾 ${t('menu.save')}`),
         el('button', { class: 'btn btn-ghost', onclick: () => this.hooks.toMainMenu() }, `🚪 ${t('menu.exit')}`),
       ),
@@ -159,6 +170,11 @@ export class Menus {
         toggleRow('reduceFlashing', t('set.reduce_flashing')),
         toggleRow('screenShake', t('set.screen_shake')),
         toggleRow('vibrationEnabled', typeof navigator !== 'undefined' && 'vibrate' in navigator ? t('set.vibration') : `${t('set.vibration')} (${t('set.unsupported')})`),
+        sectionTitle(t('set.camera'), '🎥'),
+        select(t('set.camera_sensitivity'), [[0.5, t('set.slow')], [1, t('set.normal')], [1.6, t('set.fast')]], s.cameraSensitivity, (v) => (s.cameraSensitivity = v)),
+        select(t('set.camera_drag'), [['orbit', t('set.camera_drag_orbit')], ['pan', t('set.camera_drag_pan')]], s.cameraDrag, (v) => (s.cameraDrag = v as 'orbit' | 'pan')),
+        toggleRow('rememberCamera', t('set.remember_camera')),
+        el('p', { class: 'hint' }, t('set.camera_help')),
         sectionTitle(t('set.graphics'), '🖼️'),
         toggleRow('effectsEnabled', t('set.effects')),
         select(t('set.quality'), [['high', t('set.high')], ['low', t('set.low')]], s.graphics, (v) => (s.graphics = v as 'high' | 'low')),
@@ -167,6 +183,9 @@ export class Menus {
         toggleRow('notificationsEnabled', t('set.notifications'), (v) => {
           if (v) void this.hooks.requestNotifications().then((ok) => { if (!ok) { s.notificationsEnabled = false; changed(); this.app.toast(t('toast.notif_denied'), '🔕', 'bad'); } });
         }),
+        sectionTitle(t('set.privacy'), '🔒'),
+        this.hooks.analyticsProvider() ? toggleRow('analyticsConsent', t('set.analytics_opt')) : null,
+        el('p', { class: 'hint' }, this.hooks.analyticsProvider() ? t('set.analytics_on', { provider: this.hooks.analyticsProvider()! }) : t('set.analytics_off')),
         el('button', { class: 'btn btn-danger btn-small', onclick: () => this.app.confirm({ icon: '🗑️', title: t('set.reset'), text: t('set.reset_confirm'), okLabel: t('set.reset'), danger: true, onOk: () => this.hooks.resetSave() }) }, `🗑️ ${t('set.reset')}`),
       ),
       this.back(this.returnTo),
@@ -181,6 +200,7 @@ export class Menus {
 
   achievements(): void {
     const g = this.app.game;
+    g.state.progression.flags.viewedAchievements = true;
     const list = el('div', { class: 'ach-list' });
     const states = ACHIEVEMENTS.map((a) => ({ a, state: achievementState(g, a.id) }));
     // Ready-to-claim first, then in progress, locked, claimed.
@@ -215,6 +235,125 @@ export class Menus {
     }
     const summary = el('p', { class: 'hint' }, t('ach.summary', { claimed, total: ACHIEVEMENTS.length, bonus: Math.round(claimed * ECONOMY.achievementRevenueBonus * 100), ready }));
     this.show('achievements', el('h2', {}, `🏆 ${t('menu.achievements')}`), summary, el('div', { class: 'menu-scroll' }, list), this.back(this.returnTo));
+  }
+
+  /** Opened from the HUD: "Back" returns to the game. */
+  missionsFromGame(): void {
+    this.returnTo = null;
+    this.missions();
+  }
+
+  missions(): void {
+    const g = this.app.game;
+    g.missions.refresh();
+    const section = (kind: MissionKind) => {
+      const views = g.missions.views(kind);
+      const reset = formatDuration(Math.ceil(g.missions.msUntilReset(kind) / 1000));
+      const list = el('div', { class: 'ach-list' });
+      for (const v of views) list.append(this.missionCard(v));
+      if (!views.length) list.append(el('p', { class: 'hint' }, t('missions.none')));
+      return el('section', { class: `missions-${kind}` }, sectionTitle(`${t(`missions.${kind}`)} · ${t('missions.resets_in', { time: reset })}`, kind === 'daily' ? '☀️' : '🗓️'), list);
+    };
+    this.show(
+      'missions',
+      el('h2', {}, `📅 ${t('missions.title')}`),
+      el('p', { class: 'hint' }, t('missions.hint')),
+      el('div', { class: 'menu-scroll' }, section('daily'), section('weekly'), this.adOffer()),
+      this.back(this.returnTo),
+    );
+  }
+
+  private missionCard(v: MissionView): HTMLElement {
+    const g = this.app.game;
+    const { m, kind } = v;
+    const bar = new ProgressBar('ach');
+    const fmt = m.stat === 'revenue' ? formatMoney : formatNumber;
+    bar.set(v.value / m.target, `${fmt(v.value)} / ${fmt(m.target)}`);
+    // Missions are never "locked": an unstarted one is simply to do.
+    const state: AchievementState = m.claimed ? 'claimed' : m.completed ? 'ready' : 'progress';
+    const stateLabel = state === 'progress' ? (v.value > 0 ? `${STATE_ICON.progress} ${t('ach.state.progress')}` : `🎯 ${t('missions.state.todo')}`) : `${STATE_ICON[state]} ${t(`ach.state.${state}`)}`;
+    const rewardTags = el('div', { class: 'ach-reward' }, m.money ? tag(`💷 ${formatMoney(m.money)}`) : null, m.xp ? tag(`⭐ ${m.xp} XP`) : null, m.gems ? tag(`💎 ${m.gems}`) : null);
+    let right: HTMLElement | null = null;
+    if (state === 'ready') {
+      const btn = el('button', { class: 'btn btn-claim', 'data-mission': `${kind}-${m.id}` }, `🎁 ${t('ui.claim')}`) as HTMLButtonElement;
+      btn.addEventListener(
+        'click',
+        guarded(`mission-${kind}-${m.id}`, () => {
+          btn.disabled = true;
+          if (g.missions.claim(kind, m.id)) {
+            this.app.sfx('achievement');
+            this.app.toast(t('toast.mission_claimed'), '📅', 'gold');
+            this.hooks.saveNow();
+          } else this.app.sfx('error');
+          this.missions();
+        }),
+      );
+      right = btn;
+    }
+    const n = m.stat === 'revenue' ? formatMoney(m.target) : formatNumber(m.target);
+    const label = m.stat.startsWith('sold:') ? t('mission.sold_cat', { n, cat: t(`cat.${m.stat.slice(5)}`) }) : t(`mission.${m.stat}`, { n });
+    return card(
+      `ach ach-${state} mission`,
+      iconBox(state === 'claimed' ? '✓' : kind === 'daily' ? '☀️' : '🗓️'),
+      el('div', { class: 'card-main' }, el('div', { class: 'ach-head' }, el('b', {}, label), tag(stateLabel, `ach-state st-${state}`)), bar.el, rewardTags),
+      right,
+    );
+  }
+
+  /** Optional rewarded ad. Hidden entirely when no ad provider can serve one. */
+  private adOffer(): HTMLElement | null {
+    const g = this.app.game;
+    const ads = this.hooks.ads();
+    if (!ads.provider.isAvailable()) return null;
+    const block = g.ads.block();
+    const boostPct = Math.round((ADS.boostPriceMult - 1) * 100);
+    const mins = Math.round(ADS.boostSeconds / 60);
+    let status: HTMLElement | null = null;
+    let btn: HTMLButtonElement | null = null;
+    if (block === 'boost_active') status = el('p', { class: 'hint' }, t('ads.active', { time: formatDuration(Math.ceil(g.state.ads.boostRemaining)) }));
+    else if (block === 'daily_cap') status = el('p', { class: 'hint' }, t('ads.cap'));
+    else if (block === 'cooldown') status = el('p', { class: 'hint' }, t('ads.cooldown', { time: formatDuration(Math.ceil(g.ads.cooldownLeftMs() / 1000)) }));
+    else {
+      btn = el('button', { class: 'btn btn-ghost', 'data-ad': 'watch' }, `▶ ${t('ads.watch')}`) as HTMLButtonElement;
+      btn.addEventListener('click', async () => {
+        if (!btn) return;
+        btn.disabled = true;
+        btn.textContent = t('ads.loading');
+        const r = await ads.watch();
+        if (r === 'rewarded') {
+          this.app.sfx('achievement');
+          this.app.toast(t('ads.rewarded', { pct: boostPct, mins }), '🚀', 'gold');
+          this.hooks.saveNow();
+        } else if (r === 'skipped') this.app.toast(t('ads.skipped'), '📺', 'info');
+        else if (r !== 'busy') this.app.toast(t('ads.failed'), '📺', 'bad');
+        if (this.current === 'missions') this.missions();
+      });
+    }
+    return el(
+      'section',
+      { class: 'ad-offer' },
+      sectionTitle(t('ads.title'), '📺'),
+      card('ad-card', iconBox('🚀'), el('div', { class: 'card-main' }, el('b', {}, t('ads.offer', { pct: boostPct, mins })), el('small', {}, t('ads.terms', { cap: ADS.dailyCap })), ads.provider.simulated ? el('div', { class: 'test-banner small' }, `🧪 ${t('ads.simulated')}`) : null, status), btn),
+    );
+  }
+
+  /** "How to play": re-read the basics at any time, and optionally replay the tutorial tips. */
+  help(): void {
+    const g = this.app.game;
+    const steps = ['open', 'sell', 'stock', 'upgrade', 'staff', 'goals', 'levels', 'gems', 'next'];
+    this.show(
+      'help',
+      el('h2', {}, `❓ ${t('help.title')}`),
+      el('div', { class: 'menu-scroll' }, el('ol', { class: 'help-list' }, ...steps.map((k) => el('li', {}, t(`help.${k}`))))),
+      el(
+        'div',
+        { class: 'menu-buttons' },
+        g.state.progression.tutorialDone
+          ? el('button', { class: 'btn btn-ghost', onclick: () => { this.hooks.replayTutorialTips(); this.close(); } }, `👆 ${t('help.replay_tips')}`)
+          : el('button', { class: 'btn btn-ghost', onclick: () => this.app.confirm({ icon: '⏭️', title: t('tut.skip'), text: t('tut.skip_confirm'), okLabel: t('tut.skip'), onOk: () => { this.hooks.skipTutorial(); this.close(); } }) }, `⏭️ ${t('tut.skip')}`),
+      ),
+      this.back(this.returnTo),
+    );
   }
 
   credits(): void {

@@ -68,9 +68,9 @@ export class CheckoutManager {
     const tierSpeed = this.game.shopMgr.tierOf(o).speed ?? 1;
     if (rt.cashierId && rt.cashierPresent) {
       const e = this.game.shop.staff.find((s) => s.id === rt.cashierId);
-      if (e) return tierSpeed * 1.3 * STAFF_LEVEL_SPEED[e.level - 1] * (TRAIT_MAP[e.trait]?.workMult ?? 1) * this.game.mods.staffSpeedMult();
+      if (e) return tierSpeed * 1.3 * STAFF_LEVEL_SPEED[e.level - 1] * (TRAIT_MAP[e.trait]?.workMult ?? 1) * this.game.mods.staffSpeedMult() * this.game.mods.checkoutSpeedMult();
     }
-    if (uid === this.game.shopMgr.ownerCheckoutUid()) return tierSpeed * ECONOMY.checkout.ownerSpeed;
+    if (uid === this.game.shopMgr.ownerCheckoutUid()) return tierSpeed * ECONOMY.checkout.ownerSpeed * this.game.mods.checkoutSpeedMult();
     return 0;
   }
 

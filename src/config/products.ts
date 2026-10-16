@@ -43,6 +43,15 @@ export const PRODUCTS: ProductDef[] = [
   { id: 'sneakers', category: 'clothing', department: 'clothing', cost: 90, price: 230, demand: 0.35, restockTime: 2.4, requiredLevel: 17, unlockCost: 180000, rarity: 'premium', display: 'shelf', icon: '👟', color: '#ef476f' },
   { id: 'perfume', category: 'luxury', department: 'luxury', cost: 150, price: 400, demand: 0.3, restockTime: 3, requiredLevel: 18, unlockCost: 0, rarity: 'premium', display: 'shelf', icon: '🧴', color: '#cdb4db' },
   { id: 'watch', category: 'luxury', department: 'luxury', cost: 400, price: 1100, demand: 0.18, restockTime: 4, requiredLevel: 20, unlockCost: 600000, rarity: 'special', display: 'shelf', icon: '⌚', color: '#ffd166' },
+  // Everyday essentials and extras
+  { id: 'water', category: 'drinks', department: 'drinks', cost: 1, price: 4, demand: 1.0, restockTime: 1, requiredLevel: 3, unlockCost: 150, rarity: 'common', display: 'fridge', icon: '💧', color: '#a9def9' },
+  { id: 'toilet_paper', category: 'household', department: 'household', cost: 3, price: 8, demand: 0.9, restockTime: 1, requiredLevel: 6, unlockCost: 0, rarity: 'common', display: 'shelf', icon: '🧻', color: '#f1f3f5' },
+  { id: 'soap', category: 'household', department: 'household', cost: 2, price: 6, demand: 0.85, restockTime: 1, requiredLevel: 6, unlockCost: 0, rarity: 'common', display: 'shelf', icon: '🧼', color: '#ff8fab' },
+  { id: 'laundry', category: 'household', department: 'household', cost: 6, price: 15, demand: 0.6, restockTime: 1.2, requiredLevel: 7, unlockCost: 800, rarity: 'common', display: 'shelf', icon: '🧺', color: '#3a86ff' },
+  { id: 'pet_food', category: 'household', department: 'household', cost: 8, price: 20, demand: 0.55, restockTime: 1.2, requiredLevel: 8, unlockCost: 1500, rarity: 'common', display: 'shelf', icon: '🐾', color: '#2ec4b6' },
+  { id: 'eggs', category: 'produce', department: 'produce', cost: 4, price: 10, demand: 0.8, restockTime: 1.2, requiredLevel: 9, unlockCost: 1200, rarity: 'common', display: 'shelf', icon: '🥚', color: '#fff8e7' },
+  { id: 'flowers', category: 'produce', department: 'produce', cost: 7, price: 20, demand: 0.6, restockTime: 1.4, requiredLevel: 10, unlockCost: 3500, rarity: 'common', display: 'shelf', icon: '💐', color: '#ff70a6' },
+  { id: 'books', category: 'toys', department: 'toys', cost: 12, price: 32, demand: 0.6, restockTime: 1.4, requiredLevel: 11, unlockCost: 6000, rarity: 'common', display: 'shelf', icon: '📚', color: '#3a86ff' },
   // Seasonal (only available while the season is active)
   { id: 'pumpkin_pie', category: 'bakery', department: 'snacks', cost: 5, price: 14, demand: 0.9, restockTime: 1.2, requiredLevel: 2, unlockCost: 0, rarity: 'special', display: 'shelf', icon: '🎃', color: '#f77f00', season: 'halloween' },
   { id: 'hot_cocoa', category: 'drinks', department: 'snacks', cost: 3, price: 10, demand: 1.0, restockTime: 1.2, requiredLevel: 2, unlockCost: 0, rarity: 'special', display: 'shelf', icon: '🍵', color: '#7f5539', season: 'winter' },

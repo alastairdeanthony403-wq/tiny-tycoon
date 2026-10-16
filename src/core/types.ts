@@ -1,7 +1,7 @@
 /** Serializable game state. Runtime-only data (NPC positions etc.) lives in sim/world.ts. */
 import type { StaffType } from '../config/staff';
 
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 4;
 
 export type Dir = 0 | 1 | 2 | 3; // 0:+x 1:+y 2:-x 3:-y
 
@@ -109,6 +109,8 @@ export interface Stats {
   angryCustomers: number;
   staffEverHired: number;
   taps: number;
+  dailyMissionsClaimed: number;
+  weeklyMissionsClaimed: number;
   soldByCategory: Record<string, number>;
 }
 
@@ -126,6 +128,23 @@ export interface SettingsState {
   reduceFlashing: boolean;
   screenShake: boolean;
   graphics: 'low' | 'high';
+  /** Opt-in for sending anonymous analytics to a configured provider (off by default). */
+  analyticsConsent: boolean;
+  /** Camera drag/rotate speed multiplier. */
+  cameraSensitivity: number;
+  /** What a one-finger / left-button drag does. */
+  cameraDrag: 'orbit' | 'pan';
+  /** Restore the last camera angle, zoom and pan when returning. */
+  rememberCamera: boolean;
+}
+
+/** Last camera view (only used when settings.rememberCamera is on). */
+export interface CameraState {
+  yaw: number;
+  pitch: number;
+  zoom: number;
+  panX: number;
+  panY: number;
 }
 
 export interface ActiveEvent {
@@ -144,6 +163,97 @@ export interface EventsState {
   crate?: { x: number; y: number; expires: number };
 }
 
+export interface LedgerEntry {
+  id: string;
+  kind: 'earn' | 'purchase' | 'spend' | 'revoke' | 'entitlement';
+  /** Signed gem delta (0 for pure entitlement entries). */
+  gems: number;
+  productId?: string;
+  txId?: string;
+  source: string;
+  test: boolean;
+  at: number;
+}
+
+export interface Entitlement {
+  source: 'iap' | 'gems';
+  txId: string;
+  test: boolean;
+  at: number;
+}
+
+export interface SavedLayout {
+  name: string;
+  size: number;
+  objects: { uid: number; kind: string; x: number; y: number; dir: Dir }[];
+  at: number;
+}
+
+export interface MonetizationState {
+  gemsEarned: number;
+  gemsPurchased: number;
+  totals: { earned: number; purchased: number; spent: number; revoked: number };
+  entitlements: Record<string, Entitlement>;
+  /** Transaction ids already granted: the client-side idempotency record. */
+  processedTx: string[];
+  /** Most recent ledger entries (capped); totals above are lifetime. */
+  ledger: LedgerEntry[];
+  equipped: { skin: string | null; outfit: string | null; accessory?: string | null; display?: string | null; checkout?: string | null; sign?: string | null; entrance?: string | null };
+  /** Per location: saved layouts (index = slot). */
+  layouts: Record<string, (SavedLayout | null)[]>;
+  automation: { autoRestock: boolean };
+  /** Purchases started but not finished (pending approval or awaiting verification). */
+  pending: { txId: string; productId: string; state: 'pending' | 'purchased'; at: number }[];
+  nextLedgerId: number;
+}
+
+/** Store state that isn't an entitlement: Gem upgrade levels, timers, charges, limits, one-time claims. */
+export interface StoreState {
+  /** Gem upgrade levels by perk id. */
+  perks: Record<string, number>;
+  /** Remaining active-play seconds per booster id. */
+  boosters: Record<string, number>;
+  /** Repeatable purchases per item: lifetime count and today's count (UTC day key). */
+  purchases: Record<string, { total: number; day: string; today: number }>;
+  /** Unused one-shot charges. */
+  charges: { expansionPermit: number; offlineBonus: number };
+  /** One-time Gem reward keys already granted (level:12, tier:super, event:autumn_market…). */
+  claims: string[];
+  /** Unlocked items the player has already seen in the store (for "recently unlocked"). */
+  seen: string[];
+}
+
+/** One issued daily/weekly mission: progress = stat gained since `base`. */
+export interface MissionProgress {
+  id: string;
+  stat: string;
+  base: number;
+  target: number;
+  money: number;
+  xp: number;
+  gems: number;
+  completed: boolean;
+  claimed: boolean;
+}
+
+export interface MissionsState {
+  /** UTC date (YYYY-MM-DD) the daily set was issued for. */
+  dailyKey: string;
+  /** UTC date of the Monday that starts the weekly set. */
+  weeklyKey: string;
+  daily: MissionProgress[];
+  weekly: MissionProgress[];
+}
+
+/** Rewarded-ad offers: cooldowns, daily caps and the active timed boost. */
+export interface AdsState {
+  dayKey: string;
+  watchedToday: number;
+  lastWatchedAt: number;
+  boostRemaining: number;
+  processed: string[];
+}
+
 export interface GameState {
   version: number;
   player: PlayerState;
@@ -152,6 +262,11 @@ export interface GameState {
   globalUpgrades: Record<string, number>;
   perks: Record<string, number>;
   cosmetics: { theme: string; unlockedThemes: string[] };
+  monetization: MonetizationState;
+  store: StoreState;
+  missions: MissionsState;
+  ads: AdsState;
+  camera?: CameraState;
   settings: SettingsState;
   stats: Stats;
   events: EventsState;
