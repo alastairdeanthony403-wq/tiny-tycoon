@@ -2,7 +2,13 @@
 
 Tiny Tycoon's look is a **"Cute Isometric Diorama"**: a small, bright, toy-like world with rounded shapes, soft outlines, top-left lighting, contact shadows and chibi characters. It is seen through the real orthographic 360° camera described in [CAMERA_AND_EXPANSION.md](CAMERA_AND_EXPANSION.md).
 
-> **What exists today:** every asset in the game is drawn **procedurally in code** (Canvas 2D). There are no sprite sheets or PNG files in the repository. A bundled-PNG override slot exists (see [Replacing art with PNGs](#replacing-art-with-pngs)), but `src/assets/images/` is empty. The procedural art is consistent and complete enough to ship a prototype. A commercial release would probably still want an artist pass, described at the end.
+> **What exists today:** the game ships **188 real PNG files** in `src/assets/`, and the renderer draws from them:
+> - `images/`: 131 sprites, one per registered asset. These are products, props, people portraits, furniture thumbnails, theme and location previews, terrain swatches and UI icons, at 4× resolution.
+> - `sheets/`: 46 character sprite sheets (36 customer looks and 10 staff looks) holding every animation frame from the front and the back.
+> - `textures/`: 11 terrain textures.
+> - `manifest.json` lists every file with its size, anchor and frame rectangles.
+>
+> The files were produced by `npm run art:export`, which rasterizes the procedural drawings, so they are first-generation art. They are not hand-painted or AI-generated. They are now the editable source: an artist can repaint any file at the same size and the game uses it. The procedural drawings remain as the fallback when a file is missing or invalid.
 
 ## Specification (`src/assets/spec.ts`)
 
@@ -127,18 +133,43 @@ After any change, `npm test` checks:
 - terrain sets and scenery clearances;
 - theme invariance and save round-trips.
 
-## Replacing art with PNGs
+## Asset files
 
-1. Export a transparent PNG at 2–4× the asset's declared size, with the same aspect ratio (±10%) and the ground contact point in the same relative place as the asset's `anchor`.
-2. Name it after the asset id and put it in `src/assets/images/`, e.g. `product.soda.png` or `deco.tree_round.png`.
-3. Rebuild. The image loads at start-up and replaces the drawing in the world and in UI thumbnails. If it is missing, fails to load or has the wrong shape, the procedural art stays and `imageDiagnostics()` says why.
+| Folder | What | Size rule | Used by |
+|---|---|---|---|
+| `src/assets/images/<asset id>.png` | one sprite per registered asset | (box + 2 px padding on each side) × 4. The aspect ratio must match within 3% | the sprite cache: products on shelves and in fridges, props, emotes, and every UI thumbnail (products, furniture, staff, locations, themes) |
+| `src/assets/sheets/<sheet id>.png` | character sprite sheets | exactly the size `sheetSize()` gives (768 px wide, 8 frames per row, 96×128 px frames, feet at 48, 116) | the renderer for every customer, and for staff in their standard uniform |
+| `src/assets/textures/<terrain>.png` | 2×2 cells of 64 px terrain | 128×128 | the ground painter, which picks one of the 4 cells per tile |
+| `src/assets/manifest.json` | index of all of the above | — | documentation and tests |
+
+**Sheet layout** (`src/assets/sheets.ts`): frames are packed left to right, 8 per row. Each animation contributes its front frames, then its back frames, in this order:
+- customers: idle 2, walk 6, browse 2, reach 2, queue 4, pay 2, celebrate 4;
+- staff: idle 2, idle+carry 2, walk 6, walk+carry 6, work 4, restock 2, clean 4.
+
+Frames face right and are mirrored for left-facing characters. The manifest gives every frame's rectangle. Customer looks are `char_<archetype>_<variant 0-2>_<look 0-1>`, and staff looks are `staff_<role>_<look 0-1>`. A character's look is fixed by its id, so the same customer always uses the same sheet.
+
+**Still drawn live (no file):**
+- celebrities (star glasses), angry faces, and staff wearing a premium outfit or a theme uniform;
+- 3D geometry that must rotate: walls, furniture in the world, buildings, cars and the plane. Their PNGs are only used as UI thumbnails.
+
+**Repainting art:** open the PNG, paint over it keeping the canvas size and the feet/anchor position, save, and rebuild. To regenerate everything from the procedural source, run `npm run art:export`. It needs a Chromium for `playwright-core`, and Python + Pillow for the optional 256-colour palette pass. It overwrites every exported PNG, so commit hand-painted files first or skip the export.
+
+**Loading and safety** (`src/assets/images.ts`):
+- Files are bundled by Vite: small ones are inlined, others are emitted next to the bundle. `INLINE_ASSETS=1 npm run build` inlines everything for single-file hosting.
+- Nothing is fetched from another origin.
+- Wrong-size or undecodable files are rejected and listed in `imageDiagnostics()`, also available as `window.__tinyTycoonArt()`. The procedural drawing is used instead.
+- Terrain re-bakes and the sprite cache clears once loading finishes.
 
 Billboards and products are the best candidates for PNGs. Geometry assets (furniture, buildings) and ground terrain are built from projected 3D shapes so they rotate. A flat image cannot rotate, so they keep their procedural form unless they are redesigned as billboards.
 
 ## Honest status and next steps
 
-- **Done and verified:** registry, cache, fallback, validation and diagnostics; procedural art for every product, character, staff role, outfit, prop, terrain, theme and location; the UI shows real thumbnails; and tests for all of the above.
-- **Not done:** no hand-painted or generated bitmap art exists. Characters are procedurally animated (bob, swing, reach), not frame-by-frame sprite animation. Furniture has one design per tier family rather than unique sculpted models per tier.
+- **Done and verified:**
+  - registry, cache, fallback, validation and diagnostics;
+  - 188 PNG files (sprites, 46 animated character sheets, terrain textures) loaded and drawn by the game, with procedural fallback;
+  - tests check every expected file exists with the exact layout size, that no file is orphaned, that no frame is clipped, and that every customer and staff look maps to a sheet;
+  - in the browser, all 188 files load with 0 rejected.
+- **Not done:** the PNGs are rasterized from the procedural art, not hand-painted or AI-generated. Characters are procedurally animated (bob, swing, reach), not frame-by-frame sprite animation. Furniture has one design per tier family rather than unique sculpted models per tier.
 - **Recommended for a commercial release:**
   - an illustrator pass on the 18 hero products, the 6 archetypes and the 5 staff roles, dropped in as PNG overrides;
   - a unique hero model for each shop tier's signature fixtures;

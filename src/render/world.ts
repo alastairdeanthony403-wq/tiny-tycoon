@@ -4,6 +4,7 @@ import { drawSprite } from '../assets/spriteCache';
 import { TERRAIN } from '../assets/terrain';
 import { locationSet, seasonalProps, stockroomAnnex, type LocationSet, type Placement } from '../assets/locations';
 import { tone } from '../assets/draw';
+import { textureImage, artVersion, TEXTURE_CELL } from '../assets/images';
 
 /**
  * The world around the shop: terrain painted on the ground plane, buildings and vehicles built
@@ -66,6 +67,7 @@ function bakeGround(set: LocationSet, S: number): GroundBake | null {
         if (grid[j][i] !== id) continue;
         const px = i * R;
         const py = j * R;
+        const tex = textureImage(id);
         ctx.fillStyle = t.base;
         ctx.fillRect(px - 0.5, py - 0.5, R + 1, R + 1);
         if (id === 'water') water.push([i, j]);
@@ -85,7 +87,11 @@ function bakeGround(set: LocationSet, S: number): GroundBake | null {
             }
           }
         }
-        detail(ctx, t.detail, t, px, py, R, i, j);
+        // texture file (one of its 4 cells, picked per cell) or the procedural detail pattern
+        if (tex) {
+          const q = Math.floor(hash(i, j, 21) * 4);
+          ctx.drawImage(tex, (q % 2) * TEXTURE_CELL, Math.floor(q / 2) * TEXTURE_CELL, TEXTURE_CELL, TEXTURE_CELL, px, py, R, R);
+        } else detail(ctx, t.detail, t, px, py, R, i, j);
         // a kerb where a hard surface meets a soft one
         if (!t.soft) {
           ctx.strokeStyle = tone(t.base, -0.22);
@@ -133,6 +139,18 @@ function bakeGround(set: LocationSet, S: number): GroundBake | null {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
   return { canvas, x0: GROUND_MIN, y0: GROUND_MIN, R, water };
+}
+
+/** Paints a terrain texture file's content: 2×2 cells of base colour and detail (used by the exporter). */
+export function paintTerrainTexture(ctx: CanvasRenderingContext2D, id: string): void {
+  const t = TERRAIN[id] ?? TERRAIN.grass;
+  const R = TEXTURE_CELL;
+  for (let j = 0; j < 2; j++)
+    for (let i = 0; i < 2; i++) {
+      ctx.fillStyle = t.base;
+      ctx.fillRect(i * R, j * R, R, R);
+      detail(ctx, t.detail, t, i * R, j * R, R, i + 17, j + 31);
+    }
 }
 
 function detail(ctx: CanvasRenderingContext2D, kind: string, t: { base: string; alt: string }, px: number, py: number, R: number, i: number, j: number): void {
@@ -474,6 +492,7 @@ const CAR_COLORS = ['#ef476f', '#3a86ff', '#ffd166', '#06d6a0', '#f8f9fa', '#9d4
 
 export class WorldRenderer {
   private bakes = new Map<string, GroundBake | null>();
+  private bakedVersion = -1;
   private layouts = new Map<string, Placement[]>();
 
   constructor(private ctx: CanvasRenderingContext2D) {}
@@ -482,6 +501,11 @@ export class WorldRenderer {
   drawGround(locationId: string, S: number, time: number, animate: boolean): void {
     const set = locationSet(locationId);
     const key = `${set.id}|${S}`;
+    if (this.bakedVersion !== artVersion()) {
+      // texture files finished loading: repaint the ground with them
+      this.bakes.clear();
+      this.bakedVersion = artVersion();
+    }
     if (!this.bakes.has(key)) {
       if (this.bakes.size > 6) this.bakes.clear();
       this.bakes.set(key, bakeGround(set, S));

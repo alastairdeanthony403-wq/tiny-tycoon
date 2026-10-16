@@ -90,31 +90,46 @@ function pick<T>(arr: readonly T[], h: number): T {
   return arr[h % arr.length];
 }
 
-/** Deterministic customer look. */
-export function customerAppearance(type: string, id: number): Appearance & { archetype: ArchetypeId } {
-  const archetypes = TYPE_ARCHETYPES[type] ?? ['shopper'];
-  const archetype = pick(archetypes, hash32(id, 1));
-  const v = pick(ARCHETYPES[archetype].variants, hash32(id, 2));
-  const skin = pick(ART.palette.skin, hash32(id, 3));
-  const hair = pick(v.hair ?? ART.palette.hair.slice(0, 5), hash32(id, 4));
-  const acc = [...v.accessories];
-  if (type === 'celebrity') acc.push('star_glasses');
+/** Each archetype variant comes in this many fixed looks (skin, hair, shoes), so sprite sheets can cover every customer. */
+export const LOOKS = 2;
+export const ARCHETYPE_IDS = Object.keys(ARCHETYPES) as ArchetypeId[];
+
+/** The exact appearance for (archetype, variant, look), at scale 1. Shared by the renderer and the sheet exporter. */
+export function customerLook(archetype: ArchetypeId, variant: number, look: number): Appearance {
+  const ai = ARCHETYPE_IDS.indexOf(archetype);
+  const v = ARCHETYPES[archetype].variants[variant];
   return {
-    archetype,
-    skin,
-    hair,
-    hairStyle: pick(v.hairStyle, hash32(id, 5)),
+    skin: ART.palette.skin[(ai + variant * 2 + look * 3) % ART.palette.skin.length],
+    hair: v.hair ? v.hair[look % v.hair.length] : ART.palette.hair[(ai * 3 + variant + look * 2) % 5],
+    hairStyle: v.hairStyle[look % v.hairStyle.length],
     top: v.top,
     topStyle: v.topStyle,
     trim: v.trim,
     bottom: v.bottom,
-    shoes: pick(['#2b2d42', '#ffffff', '#e63946', '#6b4226'], hash32(id, 6)),
+    shoes: ['#2b2d42', '#ffffff', '#e63946', '#6b4226'][(variant + look * 2 + ai) % 4],
     headwear: v.headwear,
     headwearColor: v.headwearColor,
-    accessories: acc,
+    accessories: [...v.accessories],
     accent: v.accent,
-    scale: type === 'child' ? 0.78 : 1,
+    scale: 1,
   };
+}
+
+export const customerSheetId = (archetype: ArchetypeId, variant: number, look: number) => `char_${archetype}_${variant}_${look}`;
+
+/**
+ * Deterministic customer look (from the simulation id, never the sim's RNG). `sheet` names the sprite
+ * sheet that shows exactly this look, or null when the look has extras no sheet covers (celebrity glasses).
+ */
+export function customerAppearance(type: string, id: number): Appearance & { archetype: ArchetypeId; sheet: string | null } {
+  const archetypes = TYPE_ARCHETYPES[type] ?? ['shopper'];
+  const archetype = pick(archetypes, hash32(id, 1));
+  const variant = hash32(id, 2) % ARCHETYPES[archetype].variants.length;
+  const look = hash32(id, 3) % LOOKS;
+  const a = customerLook(archetype, variant, look);
+  if (type === 'celebrity') a.accessories.push('star_glasses');
+  if (type === 'child') a.scale = 0.78;
+  return { ...a, archetype, sheet: type === 'celebrity' ? null : customerSheetId(archetype, variant, look) };
 }
 
 /** Staff role uniforms: each role keeps a recognisable prop whatever the outfit. */
@@ -146,25 +161,40 @@ export const OUTFITS: Record<string, OutfitDef> = {
   holiday: { id: 'holiday', top: '#d62828', trim: '#ffffff', topStyle: 'holiday', bottom: '#2d6a4f', headwear: 'santa' },
 };
 
-/** Staff look = role uniform, optionally re-dressed by an equipped outfit or a theme uniform. */
-export function staffAppearance(role: string, id: number, outfitId: string | null, themeUniform?: { body: string; apron: string }): Appearance {
-  const look = STAFF_LOOKS[role] ?? STAFF_LOOKS.stocker;
-  const o = outfitId ? OUTFITS[outfitId] : undefined;
-  const base: Appearance = {
-    skin: pick(ART.palette.skin, hash32(id, 7)),
-    hair: pick(ART.palette.hair.slice(0, 6), hash32(id, 8)),
-    hairStyle: pick<HairStyle>(['short', 'bob', 'ponytail', 'side', 'bun', 'curly'], hash32(id, 9)),
-    top: look.top,
-    trim: look.trim,
-    topStyle: look.topStyle,
-    bottom: look.bottom,
+export const staffSheetId = (role: string, look: number) => `staff_${role}_${look}`;
+
+/** The standard-uniform look for a role (look = 0..LOOKS-1), at the staff scale. */
+export function staffLook(role: string, look: number): Appearance {
+  const lk = STAFF_LOOKS[role] ?? STAFF_LOOKS.stocker;
+  const ri = Math.max(0, Object.keys(STAFF_LOOKS).indexOf(role));
+  const styles: HairStyle[] = ['short', 'bob', 'ponytail', 'side', 'bun', 'curly'];
+  return {
+    skin: ART.palette.skin[(ri * 2 + look * 3) % ART.palette.skin.length],
+    hair: ART.palette.hair[(ri + look * 3) % 6],
+    hairStyle: styles[(ri * 2 + look) % styles.length],
+    top: lk.top,
+    trim: lk.trim,
+    topStyle: lk.topStyle,
+    bottom: lk.bottom,
     shoes: '#2b2d42',
-    headwear: look.headwear,
-    headwearColor: look.headwearColor,
-    accessories: [...look.accessories],
-    accent: look.accent,
+    headwear: lk.headwear,
+    headwearColor: lk.headwearColor,
+    accessories: [...lk.accessories],
+    accent: lk.accent,
     scale: 1.04,
   };
+}
+
+/** Sprite sheet for a staff member, or null when an outfit or theme uniform changes the clothes (drawn live instead). */
+export function staffSheet(role: string, id: number, outfitId: string | null, themeUniform?: { body: string; apron: string }): string | null {
+  if ((outfitId && OUTFITS[outfitId]) || themeUniform || !STAFF_LOOKS[role]) return null;
+  return staffSheetId(role, hash32(id, 7) % LOOKS);
+}
+
+/** Staff look = role uniform, optionally re-dressed by an equipped outfit or a theme uniform. */
+export function staffAppearance(role: string, id: number, outfitId: string | null, themeUniform?: { body: string; apron: string }): Appearance {
+  const o = outfitId ? OUTFITS[outfitId] : undefined;
+  const base = staffLook(role, hash32(id, 7) % LOOKS);
   if (o) {
     base.top = o.top;
     base.trim = o.trim;

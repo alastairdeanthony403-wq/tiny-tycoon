@@ -316,3 +316,109 @@ describe('save compatibility', () => {
     expect(r.state!.player.currentLocation).toBe('neighborhood');
   });
 });
+
+// ---------------------------------------------------------------- bundled art files
+
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { sheetDefs, sheetSize, animsFor, frameRect, renderFrame, pickFrame, SHEET, frameCount, SHEET_COLS } from '../src/assets/sheets';
+import { imageFits, TEXTURE_CELL } from '../src/assets/images';
+import { customerSheetId, staffSheet, LOOKS } from '../src/assets/characters';
+
+const assetDir = (sub: string) => new URL(`../src/assets/${sub}/`, import.meta.url);
+/** Width/height from a PNG's IHDR chunk. */
+function pngSize(file: URL): { w: number; h: number } {
+  const b = readFileSync(file);
+  expect(b.subarray(1, 4).toString('ascii')).toBe('PNG');
+  return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) };
+}
+const pngs = (sub: string) => (existsSync(assetDir(sub)) ? readdirSync(assetDir(sub)).filter((f) => f.endsWith('.png')).map((f) => f.slice(0, -4)) : []);
+
+describe('bundled art files', () => {
+  it('every character look has a sprite sheet file of the exact layout size', () => {
+    const defs = sheetDefs();
+    expect(defs.length).toBe(6 * 3 * LOOKS + 5 * LOOKS);
+    for (const d of defs) {
+      const f = new URL(`${d.id}.png`, assetDir('sheets'));
+      expect(existsSync(f), d.id).toBe(true);
+      expect(pngSize(f), d.id).toEqual(sheetSize(d.kind));
+    }
+    expect(pngs('sheets').sort()).toEqual(defs.map((d) => d.id).sort());
+  });
+
+  it('every frame of every sheet fits its cell (nothing is clipped)', () => {
+    const tol = 0.5;
+    for (const d of sheetDefs()) {
+      animsFor(d.kind).forEach((a, ai) => {
+        for (const front of [true, false])
+          for (let f = 0; f < a.frames; f++) {
+            const { ctx, pts } = recordingContext();
+            renderFrame(ctx, d, ai, front, f);
+            for (const [x, y] of pts) {
+              expect(x >= -tol && x <= SHEET.w + tol && y >= -tol && y <= SHEET.h + tol, `${d.id} ${a.name} ${front} ${f}: ${x},${y}`).toBe(true);
+            }
+          }
+      });
+    }
+  });
+
+  it('sheet frames tile the file without overlap', () => {
+    for (const kind of ['customer', 'staff'] as const) {
+      const seen = new Set<string>();
+      const size = sheetSize(kind);
+      animsFor(kind).forEach((a, ai) => {
+        for (const front of [true, false])
+          for (let f = 0; f < a.frames; f++) {
+            const r = frameRect(kind, ai, front, f);
+            expect(r.x + r.w).toBeLessThanOrEqual(size.w);
+            expect(r.y + r.h).toBeLessThanOrEqual(size.h);
+            const k = `${r.x},${r.y}`;
+            expect(seen.has(k)).toBe(false);
+            seen.add(k);
+          }
+      });
+      expect(seen.size).toBe(frameCount(kind));
+      expect(size.w).toBe(SHEET_COLS * SHEET.w * SHEET.scale);
+    }
+  });
+
+  it('every live customer and standard-uniform staff member maps to an existing sheet and frame', () => {
+    const ids = new Set(sheetDefs().map((d) => d.id));
+    for (const c of CUSTOMER_TYPES) {
+      for (let id = 1; id < 60; id++) {
+        const a = customerAppearance(c.id, id);
+        if (c.id === 'celebrity') expect(a.sheet).toBeNull();
+        else expect(ids.has(a.sheet!), `${c.id} ${id}`).toBe(true);
+      }
+    }
+    for (const s of STAFF) {
+      expect(ids.has(staffSheet(s.id, 3, null)!), s.id).toBe(true);
+      expect(staffSheet(s.id, 3, 'space')).toBeNull();
+    }
+    expect(ids.has(customerSheetId('student', 0, 0))).toBe(true);
+    for (const st of ['idle', 'walk', 'browse', 'reach', 'queue', 'pay', 'celebrate'] as const) for (const t of [0, 0.13, 1.7, 99]) expect(pickFrame('customer', st, false, t), st).not.toBeNull();
+    for (const st of ['idle', 'walk', 'work', 'restock', 'clean'] as const) for (const carry of [false, true]) expect(pickFrame('staff', st, carry, 5.5), st).not.toBeNull();
+  });
+
+  it('every billboard/thumbnail asset has a sprite file that fits its box, and no file is orphaned', () => {
+    const files = new Set(pngs('images'));
+    const ids = new Set(listAssets().map((a) => a.id));
+    for (const f of files) expect(ids.has(f), `orphan images/${f}.png`).toBe(true);
+    for (const a of listAssets()) {
+      expect(files.has(a.id), `missing images/${a.id}.png`).toBe(true);
+      const s = pngSize(new URL(`${a.id}.png`, assetDir('images')));
+      expect(imageFits(a, s.w, s.h), `${a.id} ${s.w}×${s.h}`).toBe(true);
+    }
+  });
+
+  it('every terrain type has a texture file', () => {
+    expect(pngs('textures').sort()).toEqual(Object.keys(TERRAIN).sort());
+    for (const id of Object.keys(TERRAIN)) expect(pngSize(new URL(`${id}.png`, assetDir('textures')))).toEqual({ w: TEXTURE_CELL * 2, h: TEXTURE_CELL * 2 });
+  });
+
+  it('the manifest lists exactly the files on disk', () => {
+    const m = JSON.parse(readFileSync(new URL('../src/assets/manifest.json', import.meta.url), 'utf8'));
+    expect(m.images.map((x: { id: string }) => x.id).sort()).toEqual(pngs('images').sort());
+    expect(m.sheets.map((x: { id: string }) => x.id).sort()).toEqual(pngs('sheets').sort());
+    expect(m.textures.map((x: { id: string }) => x.id).sort()).toEqual(pngs('textures').sort());
+  });
+});

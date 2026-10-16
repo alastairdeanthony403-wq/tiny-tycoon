@@ -2,7 +2,7 @@
 
 A cute, casual shop-management / incremental tycoon game. You start with a tiny 3×3 shop and grow it into a retail empire: sell products, upgrade shelves and checkouts, expand the building through five shop tiers, hire staff who really walk around, open departments and new locations, then franchise for permanent bonuses. You can rotate, tilt and zoom the camera all the way around your shop.
 
-**Stack:** TypeScript, Vite, Canvas 2D (an orthographic diorama renderer with a 360° camera), DOM UI, Web Audio (all sounds and music are synthesized), Vitest. There are no art or audio asset files: all artwork is drawn procedurally through a typed asset registry (with an optional bundled-PNG override slot), and all sound is synthesized.
+**Stack:** TypeScript, Vite, Canvas 2D (an orthographic diorama renderer with a 360° camera), DOM UI, Web Audio (all sounds and music are synthesized), Vitest. Artwork ships as local PNG files in `src/assets/` (sprites, animated character sprite sheets, terrain textures) loaded through a typed asset registry, with procedural drawings as the fallback; `npm run art:export` regenerates them. All sound is synthesized.
 
 ```bash
 npm install
@@ -10,6 +10,7 @@ npm run dev        # play at http://localhost:5173 (debug panel enabled: 🐞 bu
 npm test           # unit + integration + balance tests
 npm run build      # typecheck + production build in dist/
 BALANCE_REPORT=1 npx vitest run tests/balance.test.ts   # print the 60-minute pacing report
+npm run art:export # regenerate the PNG art in src/assets/ from the procedural source
 ```
 
 Build options: `VITE_SIMULATED_STORE=1` turns on the labelled test store and `VITE_SIMULATED_ADS=1` the labelled ad simulator (both are on automatically in `npm run dev`).

@@ -6,7 +6,8 @@ import { box, diamond, diamondPath, ellipse, emoji, roundRect, badge } from './s
 import { drawObject, drawEmote, objectHeight } from './sprites';
 import { drawCharacter } from '../assets/art/characters';
 import type { Appearance, PoseState } from '../assets/art/characters';
-import { customerAppearance, staffAppearance } from '../assets/characters';
+import { customerAppearance, staffAppearance, staffSheet } from '../assets/characters';
+import { drawSheetCharacter } from '../assets/sheetDraw';
 import { registerBuiltinAssets } from '../assets';
 import { ParticleSystem } from './particles';
 import { WorldRenderer } from './world';
@@ -78,10 +79,10 @@ export class Renderer {
   private pivot = { x: 0, y: 0 };
 
   /** Appearance per character id (deterministic, so the cache is only a speed-up). */
-  private looks = new Map<string, Appearance>();
+  private looks = new Map<string, Appearance & { sheet?: string | null }>();
   private world: WorldRenderer;
 
-  private look(key: string, make: () => Appearance): Appearance {
+  private look(key: string, make: () => Appearance & { sheet?: string | null }): Appearance & { sheet?: string | null } {
     let a = this.looks.get(key);
     if (!a) {
       if (this.looks.size > 600) this.looks.clear();
@@ -1047,7 +1048,9 @@ export class Renderer {
     else if (c.state === 'pay') state = 'pay';
     if (happy && !c.moving && !this.reducedMotion) state = 'celebrate';
     const v = this.view(c.facing);
-    drawCharacter(this.ctx, p.x, p.y, look, { state, t: this.reducedMotion && state !== 'walk' ? 0 : this.time + c.id * 0.37, front: v.front, right: v.right, angry: c.angry });
+    const pose = { state, t: this.reducedMotion && state !== 'walk' ? 0 : this.time + c.id * 0.37, front: v.front, right: v.right, angry: c.angry };
+    // PNG sprite sheet first; the live procedural drawing covers looks/expressions no sheet has.
+    if (c.angry || !drawSheetCharacter(this.ctx, look.sheet ?? null, 'customer', p.x, p.y, pose, look.scale)) drawCharacter(this.ctx, p.x, p.y, look, pose);
     if (c.type === 'celebrity' && Math.random() < 0.05) this.particles.emit('sparkle', p.x, p.y - 30, 1, { spread: 20, up: 20 });
   }
 
@@ -1059,7 +1062,7 @@ export class Renderer {
     // An equipped staff outfit wins; otherwise the shop theme may supply a matching uniform.
     const outfit = this.activeOutfit();
     const uniform = getSkin(this.activeSkin())?.uniform;
-    const look = this.look(`s${e.id}:${e.type}:${outfit ?? ''}:${uniform ? uniform.body : ''}`, () => staffAppearance(e.type, e.id, outfit, uniform));
+    const look = this.look(`s${e.id}:${e.type}:${outfit ?? ''}:${uniform ? uniform.body : ''}`, () => ({ ...staffAppearance(e.type, e.id, outfit, uniform), sheet: staffSheet(e.type, e.id, outfit, uniform) }));
     const k = e.task.kind;
     let state: PoseState = 'idle';
     if (e.moving) state = 'walk';
@@ -1067,7 +1070,8 @@ export class Renderer {
     else if (k === 'pick' || k === 'fill') state = 'restock';
     else if (e.workAnim > 0) state = 'work';
     const v = this.view(e.facing);
-    drawCharacter(this.ctx, p.x, p.y, look, { state, t: this.reducedMotion && state !== 'walk' ? 0 : this.time + e.id * 0.53, front: v.front, right: v.right, carrying: e.carrying > 0 });
+    const pose = { state, t: this.reducedMotion && state !== 'walk' ? 0 : this.time + e.id * 0.53, front: v.front, right: v.right, carrying: e.carrying > 0 };
+    if (!drawSheetCharacter(this.ctx, look.sheet ?? null, 'staff', p.x, p.y, pose, look.scale)) drawCharacter(this.ctx, p.x, p.y, look, pose);
     if (k === 'scrub' && Math.random() < 0.3) this.particles.emit('sparkle', p.x, p.y - 4, 1, { spread: 15, up: 20 });
     if (data && data.level > 1) badge(this.ctx, `${data.level}`, p.x + 10, p.y - 44, '#2b2d42', '#ffd23f', 6);
   }

@@ -37,7 +37,8 @@ function bake(def: AssetDef, bucket: number): Canvasish | null {
   ctx.translate(pad, pad);
   const img = imageFor(def.id);
   try {
-    if (img) ctx.drawImage(img, 0, 0, def.size.w, def.size.h);
+    // bundled PNGs cover the asset box plus its transparent padding
+    if (img) ctx.drawImage(img, -pad, -pad, def.size.w + pad * 2, def.size.h + pad * 2);
     else (def.draw ?? FALLBACK.draw!)(ctx, def);
   } catch (e) {
     // Broken art never crashes the game: draw the fallback instead.

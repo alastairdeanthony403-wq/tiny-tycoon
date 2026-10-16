@@ -21,7 +21,7 @@ import { PREMIUM_MAP } from './monetization/catalog';
 import { NoAdProvider, SimulatedAdProvider, NativeAdBridgeProvider } from './ads/providers';
 import type { RewardedAdProvider } from './ads/types';
 import { ADS } from './config/ads';
-import { loadBundledImages } from './assets/images';
+import { loadBundledImages, imageDiagnostics } from './assets/images';
 import { clearSpriteCache } from './assets/spriteCache';
 
 /**
@@ -331,4 +331,5 @@ class App {
 
 const app = new App();
 (window as any).__tinyTycoon = app;
+(window as any).__tinyTycoonArt = imageDiagnostics;
 app.boot();
