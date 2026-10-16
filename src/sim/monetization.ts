@@ -3,6 +3,7 @@ import type { Dir, Entitlement, MonetizationState, SavedLayout } from '../core/t
 import { PREMIUM_MAP, PREMIUM_CATALOG, BASE_LAYOUT_SLOTS, MAX_GEMS } from '../monetization/catalog';
 import type { PremiumProduct, PremiumProductId } from '../monetization/catalog';
 import { OBJECT_MAP } from '../config/objects';
+import { STYLE_SLOTS } from '../config/store';
 
 export type GemSpendResult = { ok: true } | { ok: false; reason: 'unknown' | 'owned' | 'not_for_gems' | 'insufficient' | 'busy' | 'locked' };
 
@@ -24,8 +25,6 @@ const isGemAmount = (n: number) => Number.isSafeInteger(n) && n >= 0 && n <= MAX
  * grants must come from a verified server (see docs/MONETIZATION.md).
  */
 export class MonetizationManager {
-  private spending = false;
-
   constructor(private game: Game) {}
 
   /** Drop equipped cosmetics/features the player no longer owns (refunds, edited saves). */
@@ -34,6 +33,10 @@ export class MonetizationManager {
     if (st.equipped.skin && !this.ownedSkins().includes(st.equipped.skin)) st.equipped.skin = null;
     if (st.equipped.outfit && !this.ownedOutfits().includes(st.equipped.outfit)) st.equipped.outfit = null;
     if (st.automation.autoRestock && !this.owns('automation_basic')) st.automation.autoRestock = false;
+    for (const slot of STYLE_SLOTS) {
+      const v = st.equipped[slot];
+      if (v && !this.game.store.ownedStyles(slot).includes(v)) st.equipped[slot] = null;
+    }
   }
 
   get state(): MonetizationState {
@@ -86,33 +89,44 @@ export class MonetizationManager {
     return out;
   }
 
-  /** Spend Gems on a permanent item. Atomic: validate, deduct once, grant once. */
+  /** Spend Gems on any store item. Delegates to the StoreManager (the single purchase path). */
   buyWithGems(id: PremiumProductId): GemSpendResult {
-    const p = PREMIUM_MAP[id];
-    if (!p) return { ok: false, reason: 'unknown' };
-    if (this.spending) return { ok: false, reason: 'busy' };
-    if (p.ownership === 'once' && this.owns(id)) return { ok: false, reason: 'owned' };
-    if (!this.requirements(id).met) return { ok: false, reason: 'locked' };
-    const price = p.gemPrice;
-    if (price === undefined || !isGemAmount(price) || price === 0) return { ok: false, reason: 'not_for_gems' };
-    if (this.gems < price) return { ok: false, reason: 'insufficient' };
-    this.spending = true;
-    try {
-      const st = this.state;
-      // Spend earned Gems first, purchased Gems last (purchased never expire).
-      const fromEarned = Math.min(st.gemsEarned, price);
-      const fromPurchased = price - fromEarned;
-      st.gemsEarned -= fromEarned;
-      st.gemsPurchased -= fromPurchased;
-      st.totals.spent += price;
-      const txId = `gems-${id}-${this.game.now()}-${st.nextLedgerId}`;
-      this.ledger({ kind: 'spend', gems: -price, productId: id, txId, source: 'gem_purchase', test: false });
-      this.grantEntitlement(p, { source: 'gems', txId, test: false, at: this.game.now() });
-      this.game.bus.emit('gemsChanged', { delta: -price, reason: id });
-      return { ok: true };
-    } finally {
-      this.spending = false;
-    }
+    const r = this.game.store.purchase(id);
+    if (r.ok) return { ok: true };
+    const map: Record<string, Exclude<GemSpendResult, { ok: true }>['reason']> = { unknown: 'unknown', owned: 'owned', not_for_gems: 'not_for_gems', insufficient: 'insufficient', busy: 'busy', locked: 'locked' };
+    return { ok: false, reason: map[r.reason] ?? 'locked' };
+  }
+
+  /**
+   * Deducts Gems exactly once for a store purchase (earned Gems first; purchased ones last since
+   * they never expire). Returns how much came from each pot, or null if the balance is too low.
+   */
+  debitGems(price: number, productId: string, txId: string): { earned: number; purchased: number } | null {
+    if (!isGemAmount(price) || price <= 0 || this.gems < price) return null;
+    const st = this.state;
+    const fromEarned = Math.min(st.gemsEarned, price);
+    const fromPurchased = price - fromEarned;
+    st.gemsEarned -= fromEarned;
+    st.gemsPurchased -= fromPurchased;
+    st.totals.spent += price;
+    this.ledger({ kind: 'spend', gems: -price, productId, txId, source: 'gem_purchase', test: false });
+    this.game.bus.emit('gemsChanged', { delta: -price, reason: productId });
+    return { earned: fromEarned, purchased: fromPurchased };
+  }
+
+  /** Puts back Gems from a purchase whose reward could not be granted. */
+  refundGems(d: { earned: number; purchased: number }, productId: string, txId: string): void {
+    const st = this.state;
+    st.gemsEarned += d.earned;
+    st.gemsPurchased += d.purchased;
+    st.totals.spent -= d.earned + d.purchased;
+    this.ledger({ kind: 'earn', gems: d.earned + d.purchased, productId, txId, source: 'refund_failed_grant', test: false });
+    this.game.bus.emit('gemsChanged', { delta: d.earned + d.purchased, reason: 'refund' });
+  }
+
+  /** Records permanent ownership of an item (used by the store for Gem purchases). */
+  grantOwned(p: PremiumProduct, e: Entitlement): void {
+    this.grantEntitlement(p, e);
   }
 
   /**
@@ -149,6 +163,7 @@ export class MonetizationManager {
     if (p.grant.kind === 'skin' && !this.state.equipped.skin) this.state.equipped.skin = p.grant.skin;
     if (p.grant.kind === 'outfits' && !this.state.equipped.outfit) this.state.equipped.outfit = p.grant.outfits[0];
     if (p.grant.kind === 'automation') this.state.automation.autoRestock = true;
+    if (p.grant.kind === 'style' && !this.state.equipped[p.grant.slot]) this.state.equipped[p.grant.slot] = p.grant.style;
     this.game.bus.emit('premiumGranted', { productId: p.id, test: e.test });
   }
 
@@ -183,6 +198,7 @@ export class MonetizationManager {
     if (p.grant.kind === 'skin' && eq.skin === p.grant.skin) eq.skin = null;
     if (p.grant.kind === 'outfits' && eq.outfit && p.grant.outfits.includes(eq.outfit)) eq.outfit = null;
     if (p.grant.kind === 'automation') this.state.automation.autoRestock = false;
+    if (p.grant.kind === 'style' && eq[p.grant.slot] === p.grant.style) eq[p.grant.slot] = null;
   }
 
   markPending(txId: string, productId: PremiumProductId, state: 'pending' | 'purchased'): void {

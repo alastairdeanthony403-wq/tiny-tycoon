@@ -21,6 +21,7 @@ import { OfflineManager } from './offline';
 import { DebugTools } from './debug';
 import { MonetizationManager } from './monetization';
 import { MissionManager } from './missions';
+import { StoreManager } from './store';
 import { AdRewardManager } from './ads';
 import { createShop } from '../core/state';
 
@@ -63,6 +64,7 @@ export class Game {
   monetization: MonetizationManager;
   missions: MissionManager;
   ads: AdRewardManager;
+  store: StoreManager;
 
   simTime = 0;
   speed = 1;
@@ -95,6 +97,7 @@ export class Game {
     this.offline = new OfflineManager(this);
     this.debug = new DebugTools(this);
     this.monetization = new MonetizationManager(this);
+    this.store = new StoreManager(this);
     this.monetization.sanitize();
     this.missions = new MissionManager(this);
     this.ads = new AdRewardManager(this);
@@ -178,6 +181,7 @@ export class Game {
     this.safe('achievements', () => this.achievements.tick(dt));
     this.safe('missions', () => this.missions.tick(dt));
     this.safe('ads', () => this.ads.tick(dt));
+    this.safe('store', () => this.store.tick(dt));
     if (this.world.tickCount % 10 === 0) this.safe('monetization', () => this.monetization.tick());
   }
 

@@ -17,7 +17,7 @@ import { NativeBridgeAdapter } from './monetization/nativeBridgeAdapter';
 import { SimulatedVerifier, RemoteVerifier } from './monetization/verifier';
 import type { PurchaseAdapter, PurchaseVerifier } from './monetization/types';
 import { AdController } from './ads/controller';
-import { PREMIUM_MAP } from './monetization/catalog';
+import { PREMIUM_MAP, validateCatalog } from './monetization/catalog';
 import { NoAdProvider, SimulatedAdProvider, NativeAdBridgeProvider } from './ads/providers';
 import type { RewardedAdProvider } from './ads/types';
 import { ADS } from './config/ads';
@@ -331,5 +331,10 @@ class App {
 
 const app = new App();
 (window as any).__tinyTycoon = app;
+// Development builds check the store catalogue once at start-up (the tests check it too).
+if (import.meta.env.DEV) {
+  const problems = validateCatalog();
+  if (problems.length) console.error('[store] catalogue problems', problems);
+}
 (window as any).__tinyTycoonArt = imageDiagnostics;
 app.boot();

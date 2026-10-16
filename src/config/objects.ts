@@ -30,6 +30,8 @@ export interface ObjectDef {
   color: string;
   /** Premium catalog product that must be owned to build this (cosmetic decor only). */
   entitlement?: string;
+  /** Drawn as this registered billboard sprite (decorations from the store's collections). */
+  sprite?: { id: string; size: number };
 }
 
 export const OBJECTS: ObjectDef[] = [
@@ -63,6 +65,13 @@ export const OBJECTS: ObjectDef[] = [
   // Premium cosmetic decor (bundle_seasonal_decorations). Same appeal as a plant: no gameplay edge.
   { id: 'snowman', category: 'decor', icon: '⛄', baseCost: 60, costGrowth: 1.5, requiredLevel: 1, maxCount: 4, appeal: 2, needsAccess: false, color: '#ffffff', tiers: [{ cost: 0 }], entitlement: 'bundle_seasonal_decorations' },
   { id: 'pumpkin_lantern', category: 'decor', icon: '🎃', baseCost: 60, costGrowth: 1.5, requiredLevel: 1, maxCount: 4, appeal: 2, needsAccess: false, color: '#f77f00', tiers: [{ cost: 0 }], entitlement: 'bundle_seasonal_decorations' },
+  // Store collections (events and late game). Same appeal as a plant: cosmetic only.
+  { id: 'franchise_fountain', category: 'decor', icon: '⛲', baseCost: 60, costGrowth: 1.5, requiredLevel: 1, maxCount: 2, appeal: 2, needsAccess: false, color: '#48cae4', tiers: [{ cost: 0 }], entitlement: 'decor_franchise_fountain', sprite: { id: 'deco.fountain', size: 0.85 } },
+  { id: 'flower_bed', category: 'decor', icon: '🌷', baseCost: 60, costGrowth: 1.5, requiredLevel: 1, maxCount: 4, appeal: 2, needsAccess: false, color: '#ef476f', tiers: [{ cost: 0 }], entitlement: 'event_flower_bed', sprite: { id: 'deco.flower_bed', size: 1.3 } },
+  { id: 'hay_bale', category: 'decor', icon: '🌾', baseCost: 60, costGrowth: 1.5, requiredLevel: 1, maxCount: 4, appeal: 2, needsAccess: false, color: '#e9c46a', tiers: [{ cost: 0 }], entitlement: 'event_hay_bale', sprite: { id: 'deco.hay_bale', size: 1.2 } },
+  { id: 'snow_drift', category: 'decor', icon: '❄️', baseCost: 60, costGrowth: 1.5, requiredLevel: 1, maxCount: 4, appeal: 2, needsAccess: false, color: '#ffffff', tiers: [{ cost: 0 }], entitlement: 'event_snow_drift', sprite: { id: 'deco.snow_pile', size: 1.4 } },
+  { id: 'paper_lantern', category: 'decor', icon: '🏮', baseCost: 60, costGrowth: 1.5, requiredLevel: 1, maxCount: 4, appeal: 2, needsAccess: false, color: '#e63946', tiers: [{ cost: 0 }], entitlement: 'event_lantern', sprite: { id: 'deco.lantern_post', size: 0.8 } },
+  { id: 'beach_umbrella', category: 'decor', icon: '⛱️', baseCost: 60, costGrowth: 1.5, requiredLevel: 1, maxCount: 4, appeal: 2, needsAccess: false, color: '#ef476f', tiers: [{ cost: 0 }], entitlement: 'event_beach_umbrella', sprite: { id: 'deco.umbrella', size: 0.85 } },
   { id: 'fairy_lights', category: 'decor', icon: '✨', baseCost: 60, costGrowth: 1.5, requiredLevel: 1, maxCount: 4, appeal: 2, needsAccess: false, color: '#ffe066', tiers: [{ cost: 0 }], entitlement: 'bundle_seasonal_decorations' },
   { id: 'arcade', category: 'decor', icon: '🕹️', baseCost: 9000, costGrowth: 1.8, requiredLevel: 12, maxCount: 3, appeal: 10, needsAccess: false, color: '#7209b7', tiers: [{ cost: 0 }] },
 ];

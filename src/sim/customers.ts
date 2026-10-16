@@ -28,7 +28,9 @@ export class CustomerManager {
   maxCustomers(): number {
     const s = this.game.shop.size;
     const base = ECONOMY.customers.maxCustomersBase + s * s * ECONOMY.customers.maxCustomersPerTile;
-    return Math.min(ECONOMY.customers.hardCap, Math.floor(base * (this.game.state.events.active.some((e) => e.id === 'rush_hour') ? 1.6 : 1)));
+    // Rush hour and the Customer Rush booster both let more shoppers in at once (they don't stack).
+    const rush = this.game.state.events.active.some((e) => e.id === 'rush_hour') || (this.game.store?.boosterRemaining('customer_rush') ?? 0) > 0;
+    return Math.min(ECONOMY.customers.hardCap, Math.floor(base * (rush ? 1.6 : 1))) + Math.round(this.game.mods.storePerk('max_customers'));
   }
 
   spawnRate(): number {

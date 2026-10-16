@@ -21,15 +21,19 @@ Build options: `VITE_SIMULATED_STORE=1` turns on the labelled test store and `VI
 - **360° camera:** rotate all the way round, tilt, pan and zoom, with on-screen buttons as well as gestures. See [Controls](#controls).
 - **Goals:** a guided tutorial (skippable, with a How to play screen), main and side goals, **daily and weekly missions**, achievements and milestones.
 - **Art:** a "Cute Isometric Diorama" style with chibi customers (six archetypes) and staff (five roles with their own tools), 32 products with fictional brands, terrain that rotates with the camera, and six location sets (Town, City, Beach, Airport, Night Market, Countryside) with buildings, props, traffic and seasonal decor. See [docs/ART.md](docs/ART.md).
-- **Premium Shop:** Gems, five shop themes (Default, Neon Nights, Golden Shelves, Cozy Autumn, Ocean Breeze), six staff outfits, seasonal decor and conveniences.
+- **Store:**
+  - **Gems** are earned from missions, achievements, milestones, level-ups, shop tiers, franchises, the tutorial and events.
+  - **Seven tabs:** Home, Upgrades (7 permanent Gem upgrades plus the cash upgrades), Boosters (timed, counted in play time), Cosmetics (themes, outfits, staff accessories, display, checkout, sign and entrance styles, decorations, event collections), Bundles, Exchange (cash, XP, stock delivery, staff training, expansion permit, offline bonus) and Gems.
+  - **Purchases** go through one atomic service. Every item is reachable with earned Gems and none is needed to progress.
+  - See [docs/STORE.md](docs/STORE.md), including the balance simulation report.
 - **Optional rewarded ads:** a short sale-price boost, never required. Hidden unless an ad provider exists.
 - **Saves:** versioned with checksum, backup, migrations and repair; unreadable saves are kept aside and the player is told what happened. Offline earnings are capped and collected once.
 - **Accessibility:** text size, colour-blind palette, reduced motion (also follows the OS setting), screen shake and vibration toggles, camera speed.
 
-## Premium Shop and monetisation
+## Store and monetisation
 Tap the 💎 balance in the HUD. Gems are earned from achievements, milestones and missions, and every item except Gem packs can be unlocked with them. Nothing is needed to progress. In `npm run dev` (or a `VITE_SIMULATED_STORE=1` build) real-money items go through a **clearly labelled test store** where no money moves; in other builds they show as unavailable until the native billing bridge exists. Architecture, iOS and Android integration steps, the backend contract and the compliance checklist are in [docs/MONETIZATION.md](docs/MONETIZATION.md).
 
-**Nothing is live with a real provider yet** (payments, ads, analytics, cloud saves). [docs/LAUNCH.md](docs/LAUNCH.md) lists what exists, what still needs external setup, and the store and QA checklists.
+**Nothing is live with a real provider yet** (payments, ads, analytics, cloud saves). [docs/LAUNCH.md](docs/LAUNCH.md) lists what exists, what still needs external setup, and the store and QA checklists. How the Store's items, prices, rewards and balance work: [docs/STORE.md](docs/STORE.md).
 
 ## Controls
 
@@ -55,7 +59,7 @@ src/
               camera.ts (camera limits) · shopTiers.ts (the five tiers) · expansions.ts (stages)
               missions.ts · ads.ts · achievements · quests · products · objects · staff · …
   core/       state types, initial state, event bus, seeded RNG, i18n, formatting
-  sim/        headless simulation (no DOM): one manager per system
+  sim/        headless simulation (no DOM): one manager per system (store.ts = the Gem purchase service, boosters, Gem upgrades, rewards)
               game.ts (fixed-timestep orchestrator) · economy · shop (grid/placement/expansion/tiers)
               inventory · customers (AI state machine) · checkout (queues) · employees (worker AI)
               upgrades · progression (XP/levels/reputation) · quests · missions · achievements (+milestones)

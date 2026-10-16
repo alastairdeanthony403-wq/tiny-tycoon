@@ -198,13 +198,29 @@ export interface MonetizationState {
   processedTx: string[];
   /** Most recent ledger entries (capped); totals above are lifetime. */
   ledger: LedgerEntry[];
-  equipped: { skin: string | null; outfit: string | null };
+  equipped: { skin: string | null; outfit: string | null; accessory?: string | null; display?: string | null; checkout?: string | null; sign?: string | null; entrance?: string | null };
   /** Per location: saved layouts (index = slot). */
   layouts: Record<string, (SavedLayout | null)[]>;
   automation: { autoRestock: boolean };
   /** Purchases started but not finished (pending approval or awaiting verification). */
   pending: { txId: string; productId: string; state: 'pending' | 'purchased'; at: number }[];
   nextLedgerId: number;
+}
+
+/** Store state that isn't an entitlement: Gem upgrade levels, timers, charges, limits, one-time claims. */
+export interface StoreState {
+  /** Gem upgrade levels by perk id. */
+  perks: Record<string, number>;
+  /** Remaining active-play seconds per booster id. */
+  boosters: Record<string, number>;
+  /** Repeatable purchases per item: lifetime count and today's count (UTC day key). */
+  purchases: Record<string, { total: number; day: string; today: number }>;
+  /** Unused one-shot charges. */
+  charges: { expansionPermit: number; offlineBonus: number };
+  /** One-time Gem reward keys already granted (level:12, tier:super, event:autumn_market…). */
+  claims: string[];
+  /** Unlocked items the player has already seen in the store (for "recently unlocked"). */
+  seen: string[];
 }
 
 /** One issued daily/weekly mission: progress = stat gained since `base`. */
@@ -247,6 +263,7 @@ export interface GameState {
   perks: Record<string, number>;
   cosmetics: { theme: string; unlockedThemes: string[] };
   monetization: MonetizationState;
+  store: StoreState;
   missions: MissionsState;
   ads: AdsState;
   camera?: CameraState;

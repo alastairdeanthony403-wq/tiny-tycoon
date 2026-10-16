@@ -1820,6 +1820,114 @@
    "padding": 2
   },
   {
+   "id": "furniture.franchise_fountain",
+   "file": "images/furniture.franchise_fountain.png",
+   "width": 272,
+   "height": 432,
+   "bytes": 4776,
+   "category": "furniture",
+   "size": {
+    "w": 64,
+    "h": 104
+   },
+   "anchor": {
+    "x": 32,
+    "y": 88
+   },
+   "scale": 4,
+   "padding": 2
+  },
+  {
+   "id": "furniture.flower_bed",
+   "file": "images/furniture.flower_bed.png",
+   "width": 272,
+   "height": 432,
+   "bytes": 4031,
+   "category": "furniture",
+   "size": {
+    "w": 64,
+    "h": 104
+   },
+   "anchor": {
+    "x": 32,
+    "y": 88
+   },
+   "scale": 4,
+   "padding": 2
+  },
+  {
+   "id": "furniture.hay_bale",
+   "file": "images/furniture.hay_bale.png",
+   "width": 272,
+   "height": 432,
+   "bytes": 3332,
+   "category": "furniture",
+   "size": {
+    "w": 64,
+    "h": 104
+   },
+   "anchor": {
+    "x": 32,
+    "y": 88
+   },
+   "scale": 4,
+   "padding": 2
+  },
+  {
+   "id": "furniture.snow_drift",
+   "file": "images/furniture.snow_drift.png",
+   "width": 272,
+   "height": 432,
+   "bytes": 2212,
+   "category": "furniture",
+   "size": {
+    "w": 64,
+    "h": 104
+   },
+   "anchor": {
+    "x": 32,
+    "y": 88
+   },
+   "scale": 4,
+   "padding": 2
+  },
+  {
+   "id": "furniture.paper_lantern",
+   "file": "images/furniture.paper_lantern.png",
+   "width": 272,
+   "height": 432,
+   "bytes": 2479,
+   "category": "furniture",
+   "size": {
+    "w": 64,
+    "h": 104
+   },
+   "anchor": {
+    "x": 32,
+    "y": 88
+   },
+   "scale": 4,
+   "padding": 2
+  },
+  {
+   "id": "furniture.beach_umbrella",
+   "file": "images/furniture.beach_umbrella.png",
+   "width": 272,
+   "height": 432,
+   "bytes": 2840,
+   "category": "furniture",
+   "size": {
+    "w": 64,
+    "h": 104
+   },
+   "anchor": {
+    "x": 32,
+    "y": 88
+   },
+   "scale": 4,
+   "padding": 2
+  },
+  {
    "id": "furniture.fairy_lights",
    "file": "images/furniture.fairy_lights.png",
    "width": 272,

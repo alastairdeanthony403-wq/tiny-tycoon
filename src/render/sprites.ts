@@ -108,6 +108,12 @@ function drawObjectBody(ctx: CanvasRenderingContext2D, o: PlacedObject, info: Ob
   const x = o.x;
   const y = o.y;
   const def = OBJECT_MAP[o.kind];
+  if (def?.sprite) {
+    // store decorations: a registry sprite standing in the middle of the tile
+    const b = iso(x + 0.5, y + 0.5);
+    drawSprite(ctx, def.sprite.id, b.x, b.y, { size: def.sprite.size });
+    return;
+  }
   const c = iso(x + 0.5, y + 0.5);
   ellipse(ctx, c.x, c.y + 2, 26, 12, 'rgba(0,0,0,0.12)');
   switch (o.kind) {

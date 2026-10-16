@@ -1,4 +1,5 @@
 import type { AssetDef } from '../types';
+import { getAsset } from '../registry';
 import { OBJECT_MAP, OBJECTS } from '../../config/objects';
 import { drawObject } from '../../render/sprites';
 import { iso, setView, view } from '../../render/iso';
@@ -27,6 +28,15 @@ export function furnitureAssets(): AssetDef[] {
       const prev = { yaw: view.yaw, pitch: view.pitch, px: view.px, py: view.py };
       setView(0, 30, 0, 0);
       try {
+        const sp = def.sprite ? getAsset(def.sprite.id) : null;
+        if (def.sprite && sp?.draw) {
+          // decorations drawn as a registry sprite: the same drawing, scaled, standing on the tile centre
+          const k = def.sprite.size;
+          ctx.translate(32 - sp.anchor.x * k, 74 - sp.anchor.y * k);
+          ctx.scale(k, k);
+          sp.draw(ctx, sp);
+          return;
+        }
         const c = iso(0.5, 0.5);
         ctx.translate(32 - c.x, 74 - c.y);
         const o: PlacedObject = { uid: -1, kind: def.id, x: 0, y: 0, dir: 2, tier: 0, stock: 99, progress: 0, productId: OBJECT_MAP[def.id]?.display ? 'crisps' : undefined };

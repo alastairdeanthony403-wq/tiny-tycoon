@@ -109,7 +109,7 @@ export class EconomyManager {
       if (!def) continue;
       w += def.salary * (1 + 0.25 * (e.level - 1)) * (TRAIT_MAP[e.trait]?.salaryMult ?? 1);
     }
-    return Math.round(w);
+    return Math.round(w * this.game.mods.wageMult());
   }
 
   /** Average measured income per second over the rolling window. */

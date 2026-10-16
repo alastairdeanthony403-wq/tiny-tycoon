@@ -55,6 +55,10 @@ export interface GameEvents {
   error: { where: string; message: string };
   gemsChanged: { delta: number; reason: string };
   premiumGranted: { productId: string; test: boolean };
+  storePurchased: { id: string; price: number };
+  storeReward: { kind: 'cash' | 'xp'; amount: number };
+  boosterStarted: { id: string; seconds: number };
+  boosterEnded: { id: string };
   premiumRevoked: { productId: string };
 }
 

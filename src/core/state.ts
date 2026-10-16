@@ -3,7 +3,7 @@ import { EXPANSIONS } from '../config/expansions';
 import { LOCATION_MAP } from '../config/locations';
 import { DEPARTMENT_MAP } from '../config/departments';
 import { MAIN_QUESTS } from '../config/quests';
-import type { AdsState, GameState, MissionsState, MonetizationState, PlacedObject, SettingsState, ShopState, Stats } from './types';
+import type { AdsState, GameState, MissionsState, MonetizationState, PlacedObject, SettingsState, ShopState, Stats, StoreState } from './types';
 import { SAVE_VERSION } from './types';
 
 /** Fixed landmark tiles (never buildable). */
@@ -32,6 +32,10 @@ export function defaultSettings(): SettingsState {
   };
 }
 
+export function defaultStore(): StoreState {
+  return { perks: {}, boosters: {}, purchases: {}, charges: { expansionPermit: 0, offlineBonus: 0 }, claims: [], seen: [] };
+}
+
 export function defaultMonetization(): MonetizationState {
   return {
     gemsEarned: 0,
@@ -40,7 +44,7 @@ export function defaultMonetization(): MonetizationState {
     entitlements: {},
     processedTx: [],
     ledger: [],
-    equipped: { skin: null, outfit: null },
+    equipped: { skin: null, outfit: null, accessory: null, display: null, checkout: null, sign: null, entrance: null },
     layouts: {},
     automation: { autoRestock: false },
     pending: [],
@@ -151,6 +155,7 @@ export function createInitialState(now = Date.now(), seed = Math.floor(Math.rand
     perks: {},
     cosmetics: { theme: 'classic', unlockedThemes: ['classic'] },
     monetization: defaultMonetization(),
+    store: defaultStore(),
     settings: defaultSettings(),
     stats: defaultStats(),
     missions: defaultMissions(),

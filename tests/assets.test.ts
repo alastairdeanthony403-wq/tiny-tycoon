@@ -302,7 +302,7 @@ describe('save compatibility', () => {
     g.state.monetization.equipped.outfit = 'space';
     expect(sm.save(g.state, T0)).toBe(true);
     const r = sm.load(T0);
-    expect(r.state?.monetization.equipped).toEqual({ skin: 'cozy_autumn', outfit: 'space' });
+    expect(r.state?.monetization.equipped).toMatchObject({ skin: 'cozy_autumn', outfit: 'space' });
     expect(Object.keys(r.state!.monetization.entitlements).sort()).toEqual(['bundle_outfits_deluxe', 'cosmetic_cozy_autumn']);
   });
 

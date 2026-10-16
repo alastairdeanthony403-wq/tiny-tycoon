@@ -4,6 +4,7 @@ import type { AudioManager, SfxName } from '../audio/audio';
 import type { Haptics } from '../services/haptics';
 import type { NotificationService } from '../services/notifications';
 import type { AppApi, ConfirmOpts, PlacementRequest } from './api';
+import type { StoreTab } from './premiumShop';
 import type { Dir } from '../core/types';
 import type { Panel } from './panel';
 import { el, setText, toggle, pulse } from './dom';
@@ -160,10 +161,10 @@ export class UIManager implements AppApi {
     this.hooks.saveNow();
   }
 
-  openPremium(tab: 'featured' | 'cosmetic' | 'gems' | 'convenience' = 'featured'): void {
+  openPremium(tab: StoreTab | 'convenience' = 'featured', productId?: string): void {
     this.sfx('swoosh');
     this.premium.endPreview();
-    this.premium.show(tab);
+    this.premium.show(tab, productId);
   }
 
   /** One-time camera hint, after the tutorial so it doesn't compete with onboarding. */
@@ -826,6 +827,13 @@ export class UIManager implements AppApi {
         this.toast(t(e.kind === 'daily' ? 'toast.daily_done' : 'toast.weekly_done'), '📅', 'good');
       }),
       b.on('adBoostEnded', () => this.toast(t('ads.ended'), '🚀', 'info')),
+      b.on('boosterEnded', (e) => this.toast(t('store.booster_ended', { name: t(`store.booster.${e.id}.name`) }), '⏱️', 'info')),
+      // One-time Gem rewards for progression (level-ups, tiers, franchises, tutorial, events).
+      b.on('gemsChanged', (e) => {
+        if (e.delta <= 0) return;
+        const src = e.reason.split(':')[0];
+        if (['level_up', 'shop_tier', 'franchise', 'tutorial', 'event'].includes(src)) this.toast(t(`store.reward.${src}`, { n: e.delta }), '💎', 'gold');
+      }),
       // Keep prices, shortfalls and lock states current if Gems change while the store is open.
       b.on('gemsChanged', () => this.premium.render()),
       b.on('error', (e) => {

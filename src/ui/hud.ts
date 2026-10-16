@@ -8,6 +8,7 @@ import { t } from '../core/i18n';
 import { EVENT_MAP } from '../config/events';
 import { QuestManager } from '../sim/quests';
 import { getProduct } from '../config/products';
+import { BOOSTERS } from '../config/store';
 import { ADS } from '../config/ads';
 import { formatDuration } from '../core/format';
 
@@ -26,6 +27,8 @@ export class Hud {
   private questUpdaters: (() => void)[] = [];
   private eventBox: HTMLElement;
   private boostEl: HTMLElement;
+  private storeBoosts: HTMLElement;
+  private storeBoostKey = '';
   private eventKey = '';
   private eventTimer: TimerDisplay | null = null;
   questsCollapsed = loadCollapsed();
@@ -48,6 +51,7 @@ export class Hud {
     this.quests = el('div', { class: 'quests' });
     this.eventBox = el('div', { class: 'event-box' });
     this.boostEl = el('div', { class: 'boost-chip hidden', role: 'status' });
+    this.storeBoosts = el('div', { class: 'boost-chips', role: 'status', 'aria-live': 'polite' });
     this.el = el(
       'div',
       { class: 'hud' },
@@ -60,7 +64,7 @@ export class Hud {
         levelBox,
         el('div', { class: 'hud-right' }, this.shopLvl, this.rep, onDebug ? el('button', { class: 'icon-btn', 'aria-label': 'Debug', onclick: onDebug }, '🐞') : null, el('button', { class: 'icon-btn', 'data-tut': 'pause', 'aria-label': t('menu.pause'), onclick: onMenu }, '⏸')),
       ),
-      el('div', { class: 'hud-left' }, this.quests, this.boostEl, this.eventBox),
+      el('div', { class: 'hud-left' }, this.quests, this.boostEl, this.storeBoosts, this.eventBox),
     );
   }
 
@@ -86,6 +90,15 @@ export class Hud {
     const boost = g.state.ads.boostRemaining;
     toggle(this.boostEl, 'hidden', boost <= 0);
     if (boost > 0) setText(this.boostEl, `🚀 ${t('ads.boost_chip', { pct: Math.round((ADS.boostPriceMult - 1) * 100), time: formatDuration(Math.ceil(boost)) })}`);
+    // Store boosters: one chip each with its effect and the play time left (whole seconds).
+    const chips = Object.values(BOOSTERS)
+      .filter((b) => g.store.boosterRemaining(b.id) > 0)
+      .map((b) => `${b.icon} ${t(`store.chip.${b.id}`, { mult: b.mult })} · ${formatDuration(Math.ceil(g.store.boosterRemaining(b.id)))}`);
+    const key = chips.join('|');
+    if (key !== this.storeBoostKey) {
+      this.storeBoostKey = key;
+      this.storeBoosts.replaceChildren(...chips.map((c) => el('button', { class: 'boost-chip store', onclick: () => this.app.openPremium('booster') }, c)));
+    }
   }
 
   private questText(id: string, target: number, side?: string): string {

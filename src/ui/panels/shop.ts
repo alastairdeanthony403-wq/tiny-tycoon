@@ -48,8 +48,9 @@ export class ShopPanel extends Panel {
     out.push(sectionTitle(t('shop.decor'), '🪴'));
     out.push(el('p', { class: 'hint' }, t('shop.decor_hint')));
     for (const def of OBJECTS.filter((o) => o.category === 'decor' && !o.entitlement)) out.push(this.buildCard(def.id, add));
-    const premiumDecor = OBJECTS.filter((o) => o.entitlement);
-    if (premiumDecor.some((o) => g.monetization.owns(o.entitlement!))) for (const def of premiumDecor) out.push(this.buildCard(def.id, add));
+    // Only decorations the player owns are listed (each store collection grants its own).
+    const ownedDecor = OBJECTS.filter((o) => o.entitlement && g.monetization.owns(o.entitlement));
+    if (ownedDecor.length) for (const def of ownedDecor) out.push(this.buildCard(def.id, add));
     else out.push(card('premium-teaser', iconBox('🎄'), el('div', { class: 'card-main' }, el('b', {}, t('premium.bundle_seasonal_decorations.name')), el('small', {}, t('shop.premium_decor_hint'))), el('button', { class: 'btn btn-small', onclick: () => this.app.openPremium('cosmetic') }, `💎 ${t('shop.see_store')}`)));
 
     // ---- Saved layouts (1 free slot; layout_slots_plus adds more)

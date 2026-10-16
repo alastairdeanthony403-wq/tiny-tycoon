@@ -25,6 +25,7 @@ import { DOOR_TILE, STOCKROOM_TILE } from '../core/state';
 import { accessTile } from '../sim/grid';
 import { formatMoney } from '../core/format';
 import { getSkin } from './skins';
+import { styledSkin, ENTRANCE_STYLES, ACCESSORY_STYLES, type EquippedStyles } from './styles';
 import { t } from '../core/i18n';
 
 export type PickResult =
@@ -56,7 +57,7 @@ export class Renderer {
   readonly particles = new ParticleSystem();
   placement: PlacementMode | null = null;
   /** Temporary cosmetic preview (from the Premium Shop): applies to the real shop until cleared. */
-  preview: { skin?: string | null; outfit?: string | null } | null = null;
+  preview: { skin?: string | null; outfit?: string | null; styles?: EquippedStyles } | null = null;
   selectedUid = 0;
   highlightUid = 0;
   highlightSign = false;
@@ -203,6 +204,18 @@ export class Renderer {
   activeSkin(): string | null {
     if (this.preview && this.preview.skin !== undefined) return this.preview.skin;
     return this.game.state.monetization.equipped.skin;
+  }
+
+  /** Equipped cosmetic styles, with any style being previewed from the store laid on top. */
+  activeStyles(): EquippedStyles {
+    const eq = this.game.state.monetization.equipped;
+    const base: EquippedStyles = { accessory: eq.accessory ?? null, display: eq.display ?? null, checkout: eq.checkout ?? null, sign: eq.sign ?? null, entrance: eq.entrance ?? null };
+    return this.preview?.styles ? { ...base, ...this.preview.styles } : base;
+  }
+
+  /** Theme plus equipped styles (what displays, checkouts and signs are drawn with). */
+  private styled() {
+    return styledSkin(getSkin(this.activeSkin()), this.activeStyles());
   }
 
   activeOutfit(): string | null {
@@ -500,14 +513,28 @@ export class Renderer {
 
   private drawOutsideGround(S: number, loc: (typeof LOCATION_MAP)[string]): void {
     this.world.drawGround(loc.id, S, this.time, !this.reducedMotion);
-    // entrance mat in front of the door
-    diamond(this.ctx, -1, DOOR_TILE.y, 1, 'rgba(180,60,60,0.45)', 0.5, 0.1);
+    // entrance mat in front of the door (an entrance style recolours it)
+    const ent = ENTRANCE_STYLES[this.activeStyles().entrance ?? ''];
+    if (ent) {
+      diamond(this.ctx, -1, DOOR_TILE.y, 1, ent.matTrim, 0.5, 0.06);
+      diamond(this.ctx, -1, DOOR_TILE.y, 1, ent.mat, 0.6, 0.16);
+    } else diamond(this.ctx, -1, DOOR_TILE.y, 1, 'rgba(180,60,60,0.45)', 0.5, 0.1);
   }
 
   /** Buildings, props and traffic around the shop, as depth-sortable items. */
   private sceneryItems(S: number, loc: (typeof LOCATION_MAP)[string], lit: boolean): { x: number; y: number; draw: () => void }[] {
     const seasons = this.game.mods.seasons().map((x) => x.id);
-    return this.world.items(loc.id, S, seasons, this.time, { animate: !this.reducedMotion, lit });
+    const items = this.world.items(loc.id, S, seasons, this.time, { animate: !this.reducedMotion, lit });
+    // entrance style: a matching pair of props either side of the door
+    const ent = ENTRANCE_STYLES[this.activeStyles().entrance ?? ''];
+    if (ent) {
+      ent.props.forEach((id, i) => {
+        const x = -0.22;
+        const y = i === 0 ? DOOR_TILE.y - 0.2 : DOOR_TILE.y + 1.2;
+        items.push({ x, y, draw: () => { const p = iso(x, y); drawSprite(this.ctx, id, p.x, p.y, { size: id.includes('streetlight') || id.includes('lantern') || id.includes('tree') ? 0.7 : 0.8 }); } });
+      });
+    }
+    return items;
   }
 
   /** True when a ground point outside the shop lies between the shop and the camera. */
@@ -924,7 +951,7 @@ export class Renderer {
     ctx.font = `900 ${fs}px Nunito, system-ui, sans-serif`;
     const w = Math.max(80, ctx.measureText(name).width + 34);
     const h = grand ? 24 : 19;
-    const sign = getSkin(this.activeSkin())?.sign;
+    const sign = this.styled()?.sign;
     roundRect(ctx, mid.x - w / 2, mid.y - h / 2, w, h, 8);
     ctx.save();
     if (sign?.glow || grand) {
@@ -1017,7 +1044,7 @@ export class Renderer {
     }
     if (this.placement && this.placement.ignoreUid === o.uid) ctx.globalAlpha = 0.3;
     drawObject(ctx, o, {
-      skin: getSkin(this.activeSkin()),
+      skin: this.styled(),
       sparkle: !this.reducedMotion,
       stockRatio: isDisplay ? o.stock / Math.max(1, cap) : 1,
       closed: o.kind === 'checkout' && !(o.uid === owner || rt?.cashierId),
@@ -1062,7 +1089,13 @@ export class Renderer {
     // An equipped staff outfit wins; otherwise the shop theme may supply a matching uniform.
     const outfit = this.activeOutfit();
     const uniform = getSkin(this.activeSkin())?.uniform;
-    const look = this.look(`s${e.id}:${e.type}:${outfit ?? ''}:${uniform ? uniform.body : ''}`, () => ({ ...staffAppearance(e.type, e.id, outfit, uniform), sheet: staffSheet(e.type, e.id, outfit, uniform) }));
+    const acc = ACCESSORY_STYLES[this.activeStyles().accessory ?? ''];
+    const look = this.look(`s${e.id}:${e.type}:${outfit ?? ''}:${uniform ? uniform.body : ''}:${acc ?? ''}`, () => {
+      const a = staffAppearance(e.type, e.id, outfit, uniform);
+      if (acc && !a.accessories.includes(acc)) a.accessories.push(acc);
+      // sheets show the plain uniform, so an accessory means drawing this person live
+      return { ...a, sheet: acc ? null : staffSheet(e.type, e.id, outfit, uniform) };
+    });
     const k = e.task.kind;
     let state: PoseState = 'idle';
     if (e.moving) state = 'walk';

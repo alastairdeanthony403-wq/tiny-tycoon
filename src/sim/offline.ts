@@ -39,7 +39,8 @@ export class OfflineManager {
     const p = this.game.state.pendingOffline;
     if (!p || p.claimed) return 0;
     p.claimed = true;
-    const amount = Math.floor(p.amount * Math.max(1, Math.min(2, multiplier)));
+    // The Offline Bonus charge (Premium Store) multiplies an amount that was already capped by offline time limits.
+    const amount = Math.floor(p.amount * Math.max(1, Math.min(2, multiplier)) * this.game.store.takeOfflineMultiplier());
     this.game.economy.earn(amount, false);
     this.game.state.pendingOffline = undefined;
     this.game.bus.emit('offlineEarnings', { seconds: p.seconds, amount });

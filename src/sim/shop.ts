@@ -444,7 +444,8 @@ export class ShopManager {
 
   expansionCost(): number | null {
     const e = this.nextExpansion();
-    return e ? Math.round(e.cost * this.costMult) : null;
+    // An Expansion Permit (Premium Store) takes a share off the cash price; it is used up by expand().
+    return e ? Math.round(e.cost * this.costMult * (1 - (this.game.store?.expansionDiscount() ?? 0))) : null;
   }
 
   canExpand(): { ok: boolean; reason?: string } {
@@ -461,6 +462,7 @@ export class ShopManager {
     if (!this.canExpand().ok) return false;
     const e = this.nextExpansion()!;
     if (!this.game.economy.spend(this.expansionCost()!, 'expansion')) return false;
+    this.game.store?.useExpansionPermit();
     this.shop.construction = { targetStage: this.shop.stage + 1, remaining: e.buildTime, duration: e.buildTime };
     this.game.bus.emit('expansionStarted', { size: e.size, duration: e.buildTime });
     return true;

@@ -63,6 +63,16 @@ Products may declare `requires: { level?, lifetimeRevenue? }`. `MonetizationMana
 | cosmetic_ocean_breeze | non-consumable | Ocean Breeze shop theme (sea-glass palette, seaside sign and uniforms, floor caustics). Requires level 12 and £40,000 lifetime revenue | 120 | — (Gems only, `realMoney: false`) | com.tinytycoon.cosmetic_ocean_breeze (reserved, not registered) |
 | bundle_staff_outfits | non-consumable | Smart Suits + Retro Diner outfits | 200 | £1.99 | com.tinytycoon.bundle_staff_outfits |
 | bundle_outfits_deluxe | non-consumable | Barista, Chef Whites, Space Explorer and Holiday outfits. Requires level 6 | 250 | — (Gems only, `realMoney: false`) | com.tinytycoon.bundle_outfits_deluxe (reserved, not registered) |
+
+The Store also sells 45 **Gems-only** items generated from `src/config/store.ts` and `src/monetization/catalog.ts`:
+- Gem upgrades;
+- boosters;
+- exchange resources;
+- cosmetic styles;
+- event and late-game decorations;
+- bundles.
+
+They have `realMoney: false` and no store SKU, so they can never charge real money. Their store ids follow the same `com.tinytycoon.<id>` pattern but are reserved only, not registered. Prices, effects and the balance report are in [STORE.md](STORE.md).
 | bundle_seasonal_decorations | non-consumable | Snowman, pumpkin lantern, fairy lights (placeable decor) | 200 | £1.99 | com.tinytycoon.bundle_seasonal_decorations |
 | gems_small | consumable | 100 Gems | — | £0.99 | com.tinytycoon.gems_small |
 | gems_medium | consumable | 550 Gems | — | £4.99 | com.tinytycoon.gems_medium |

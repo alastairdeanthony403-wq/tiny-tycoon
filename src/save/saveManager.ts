@@ -1,8 +1,9 @@
 import type { GameState } from '../core/types';
 import { SAVE_VERSION } from '../core/types';
-import { createInitialState, createShop, defaultMonetization, defaultSettings, defaultStats } from '../core/state';
+import { createInitialState, createShop, defaultMonetization, defaultSettings, defaultStats, defaultStore } from '../core/state';
 import { PREMIUM_MAP, MAX_GEMS, LEGACY_PRODUCT_IDS } from '../monetization/catalog';
-import type { AdsState, MissionsState, MonetizationState } from '../core/types';
+import type { AdsState, MissionsState, MonetizationState, StoreState } from '../core/types';
+import { BOOSTERS, GEM_PERKS, RESOURCES } from '../config/store';
 import { ECONOMY } from '../config/economy';
 import { OBJECT_MAP } from '../config/objects';
 import { PRODUCT_MAP } from '../config/products';
@@ -158,6 +159,7 @@ export function validate(raw: any, now = Date.now()): GameState {
   if (!themes.includes('classic')) themes.unshift('classic');
   st.cosmetics = { theme: str(cos.theme, 'classic'), unlockedThemes: themes };
   st.monetization = validateMonetization(r.monetization);
+  st.store = validateStore(r.store);
   const set = obj(r.settings);
   const ds = defaultSettings();
   st.settings = {
@@ -233,6 +235,34 @@ function validateAds(raw: unknown): AdsState {
 const gemInt = (v: unknown) => (typeof v === 'number' && Number.isSafeInteger(v) ? Math.min(MAX_GEMS, Math.max(0, v)) : 0);
 
 /** Keeps only well-formed premium data; unknown products and malformed entries are dropped. */
+/** Store state: unknown perks/boosters are dropped, levels and timers are clamped to their legal ranges. */
+export function validateStore(raw: unknown): StoreState {
+  const d = defaultStore();
+  if (!raw || typeof raw !== 'object') return d;
+  const r = obj(raw);
+  for (const [id, lv] of Object.entries(obj(r.perks))) {
+    const def = GEM_PERKS[id as keyof typeof GEM_PERKS];
+    if (def) d.perks[id] = Math.floor(num(lv, 0, 0, def.prices.length));
+  }
+  for (const [id, sec] of Object.entries(obj(r.boosters))) {
+    const def = BOOSTERS[id as keyof typeof BOOSTERS];
+    if (def) {
+      const v = num(sec, 0, 0, def.maxStackSeconds);
+      if (v > 0) d.boosters[id] = v;
+    }
+  }
+  for (const [id, v] of Object.entries(obj(r.purchases))) {
+    if (!PREMIUM_MAP[id as keyof typeof PREMIUM_MAP]) continue;
+    const o = obj(v);
+    d.purchases[id] = { total: Math.floor(num(o.total, 0, 0, 1e9)), day: dateKey(o.day), today: Math.floor(num(o.today, 0, 0, 1e6)) };
+  }
+  const ch = obj(r.charges);
+  d.charges = { expansionPermit: Math.floor(num(ch.expansionPermit, 0, 0, RESOURCES.maxCharges)), offlineBonus: Math.floor(num(ch.offlineBonus, 0, 0, RESOURCES.maxCharges)) };
+  d.claims = [...new Set(arr<unknown>(r.claims).filter((x): x is string => typeof x === 'string' && x.length < 80))].slice(-2000);
+  d.seen = [...new Set(arr<unknown>(r.seen).filter((x): x is string => typeof x === 'string' && !!PREMIUM_MAP[x as keyof typeof PREMIUM_MAP]))];
+  return d;
+}
+
 export function validateMonetization(raw: unknown): MonetizationState {
   const d = defaultMonetization();
   const m = obj(raw);
@@ -264,7 +294,15 @@ export function validateMonetization(raw: unknown): MonetizationState {
     entitlements: ents,
     processedTx: arr<string>(m.processedTx).filter((x) => typeof x === 'string').slice(-5000),
     ledger: arr<any>(m.ledger).filter((l) => l && typeof l.id === 'string').slice(-200).map((l) => ({ id: l.id, kind: ['earn', 'purchase', 'spend', 'revoke', 'entitlement'].includes(l.kind) ? l.kind : 'earn', gems: typeof l.gems === 'number' && Number.isSafeInteger(l.gems) ? l.gems : 0, productId: typeof l.productId === 'string' ? LEGACY_PRODUCT_IDS[l.productId] ?? l.productId : undefined, txId: typeof l.txId === 'string' ? l.txId : undefined, source: str(l.source, ''), test: bool(l.test, false), at: num(l.at, 0, 0, 1e15) })),
-    equipped: { skin: typeof eq.skin === 'string' ? eq.skin : null, outfit: typeof eq.outfit === 'string' ? eq.outfit : null },
+    equipped: {
+      skin: typeof eq.skin === 'string' ? eq.skin : null,
+      outfit: typeof eq.outfit === 'string' ? eq.outfit : null,
+      accessory: typeof eq.accessory === 'string' ? eq.accessory : null,
+      display: typeof eq.display === 'string' ? eq.display : null,
+      checkout: typeof eq.checkout === 'string' ? eq.checkout : null,
+      sign: typeof eq.sign === 'string' ? eq.sign : null,
+      entrance: typeof eq.entrance === 'string' ? eq.entrance : null,
+    },
     layouts,
     automation: { autoRestock: bool(obj(m.automation).autoRestock, false) },
     pending: arr<any>(m.pending).filter((x) => x && typeof x.txId === 'string' && PREMIUM_MAP[(LEGACY_PRODUCT_IDS[x.productId] ?? x.productId) as keyof typeof PREMIUM_MAP]).map((x) => ({ txId: x.txId, productId: LEGACY_PRODUCT_IDS[x.productId] ?? x.productId, state: x.state === 'purchased' ? 'purchased' : 'pending', at: num(x.at, 0, 0, 1e15) })),

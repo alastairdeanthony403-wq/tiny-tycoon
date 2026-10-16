@@ -381,7 +381,9 @@ html.reduce-motion *, html.reduce-motion *::before { animation-duration: 0.001s 
 .ps-head { display: flex; align-items: center; gap: 8px; padding-right: 44px; position: relative; }
 .ps-head h2 { margin: 0; font-size: 1.25rem; }
 .ps-head .insp-close { top: -2px; right: -2px; }
-.ps-balance { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; }
+.ps-balances { margin-left: auto; display: flex; gap: 10px; }
+.ps-balance.cash b { color: var(--good-dark); }
+.ps-balance { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; }
 .ps-balance b { font-size: 1.1rem; }
 .ps-balance small { font-size: 0.7rem; color: var(--ink-soft); font-weight: 800; }
 .test-banner { background: repeating-linear-gradient(135deg, #fff3bf 0 12px, #ffe8a3 12px 24px); border: 2px dashed #e09b00; border-radius: 12px; padding: 6px 10px; font-weight: 900; font-size: 0.78rem; color: #6b4e00; }
@@ -390,8 +392,9 @@ html.reduce-motion *, html.reduce-motion *::before { animation-duration: 0.001s 
 .ps-status.bad { background: #ffe3e3; color: #a61e4d; }
 .spinner { width: 16px; height: 16px; border-radius: 50%; border: 3px solid #ffd6a5; border-top-color: var(--primary); animation: spin 0.8s linear infinite; flex: 0 0 auto; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.ps-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; background: var(--card-2); padding: 4px; border-radius: 14px; }
-.ps-tab { border: 0; background: transparent; border-radius: 10px; min-height: 40px; font-weight: 900; font-size: 0.78rem; cursor: pointer; padding: 2px; }
+.ps-tabs { display: flex; gap: 4px; background: var(--card-2); padding: 4px; border-radius: 14px; overflow-x: auto; scrollbar-width: none; flex: 0 0 auto; }
+.ps-tabs::-webkit-scrollbar { display: none; }
+.ps-tab { border: 0; background: transparent; border-radius: 10px; min-height: 44px; font-weight: 900; font-size: 0.78rem; cursor: pointer; padding: 2px 10px; white-space: nowrap; flex: 0 0 auto; }
 .ps-tab.active { background: #fff; box-shadow: 0 2px 0 var(--line); color: var(--primary-dark); }
 .ps-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 2px; }
 .ps-card { cursor: pointer; transition: transform 0.1s; }
@@ -485,3 +488,24 @@ html.reduce-motion *, html.reduce-motion *::before { animation-duration: 0.001s 
 .req-row.unmet { color: var(--bad-dark); }
 .gains { margin: 4px 0 0; padding-left: 1.1em; font-size: 0.78rem; color: var(--ink-soft); display: flex; flex-direction: column; gap: 2px; }
 .modal .gains { text-align: left; color: var(--ink); font-size: 0.9rem; }
+
+/* ---- store additions */
+.ps-section { margin: 14px 4px 6px; font-size: 1rem; }
+.ps-event { display: flex; align-items: center; gap: 10px; background: linear-gradient(135deg, #fff4dc, #ffe5ec); border: 2px solid var(--line); border-radius: 16px; padding: 10px 12px; margin: 4px 0 8px; }
+.ps-event-icon { font-size: 1.9rem; }
+.ps-event .card-main { display: flex; flex-direction: column; gap: 2px; }
+.ps-earn { background: #eef9ff; border: 2px dashed #bde0fe; border-radius: 14px; padding: 8px 12px; margin: 12px 2px; }
+.ps-earn ul { margin: 4px 0 0; padding-left: 18px; font-size: 0.84rem; font-weight: 700; }
+.ps-effect { background: #f3fff8; border: 2px solid #c7f0d8; border-radius: 14px; padding: 8px 12px; margin: 6px 0; }
+.ps-effect ul { margin: 4px 0 0; padding-left: 18px; font-weight: 800; font-size: 0.88rem; }
+.ps-why { display: block; color: var(--ink-soft); font-weight: 800; }
+.ps-next { display: block; font-weight: 800; color: var(--ink-soft); }
+.ps-value { font-weight: 900; color: var(--good-dark); margin: 6px 0 0; }
+.ps-thumb.cash { background: linear-gradient(135deg, #d8f3dc, #95d5b2); }
+.ps-confirm dl { display: grid; grid-template-columns: auto auto; gap: 4px 16px; justify-content: center; margin: 8px 0 0; font-weight: 800; }
+.ps-confirm dt { color: var(--ink-soft); text-align: right; }
+.ps-confirm dd { margin: 0; text-align: left; }
+.boost-chips { display: flex; flex-wrap: wrap; gap: 4px; align-self: flex-start; }
+.boost-chips:empty { display: none; }
+.boost-chip.store { border: 0; cursor: pointer; font-family: inherit; min-height: 32px; }
+.hint.bad { color: var(--bad-dark); font-weight: 800; }

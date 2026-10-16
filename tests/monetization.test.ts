@@ -26,19 +26,24 @@ function setup() {
 }
 
 describe('catalog', () => {
-  it('has the required products with stable unique ids and store ids', () => {
-    const ids = PREMIUM_CATALOG.map((p) => p.id).sort();
-    expect(ids).toEqual(['automation_basic', 'bundle_outfits_deluxe', 'bundle_seasonal_decorations', 'bundle_staff_outfits', 'cosmetic_cozy_autumn', 'cosmetic_golden_shelves', 'cosmetic_neon_nights', 'cosmetic_ocean_breeze', 'gems_large', 'gems_medium', 'gems_small', 'layout_slots_plus']);
+  it('keeps every released product id, with unique ids and store ids', () => {
+    const ids = PREMIUM_CATALOG.map((p) => p.id);
+    for (const id of ['automation_basic', 'bundle_outfits_deluxe', 'bundle_seasonal_decorations', 'bundle_staff_outfits', 'cosmetic_cozy_autumn', 'cosmetic_golden_shelves', 'cosmetic_neon_nights', 'cosmetic_ocean_breeze', 'gems_large', 'gems_medium', 'gems_small', 'layout_slots_plus']) expect(ids).toContain(id);
+    expect(new Set(ids).size).toBe(ids.length);
     const storeIds = PREMIUM_CATALOG.flatMap((p) => [p.storeIds.ios, p.storeIds.android]);
     expect(new Set(PREMIUM_CATALOG.map((p) => p.storeIds.ios)).size).toBe(PREMIUM_CATALOG.length);
     expect(storeIds.every((s) => /^com\.tinytycoon\.[a-z_]+$/.test(s))).toBe(true);
   });
 
-  it('gem packs are consumable, everything else is permanent and reachable with Gems', () => {
+  it('gem packs are consumable; everything else is reachable with Gems and only Gem packs plus released items take real money', () => {
     for (const p of PREMIUM_CATALOG) {
       if (p.category === 'gems') expect([p.type, p.ownership, p.gemPrice]).toEqual(['consumable', 'stackable', undefined]);
-      else expect([p.type, p.ownership, typeof p.gemPrice]).toEqual(['non_consumable', 'once', 'number']);
+      else expect(typeof p.gemPrice, p.id).toBe('number');
+      if (p.ownership === 'stackable') expect(p.type).toBe('consumable');
+      else expect(p.type).toBe('non_consumable');
     }
+    const realMoney = PREMIUM_CATALOG.filter((p) => p.realMoney).map((p) => p.id).sort();
+    expect(realMoney).toEqual(['automation_basic', 'bundle_seasonal_decorations', 'bundle_staff_outfits', 'cosmetic_neon_nights', 'gems_large', 'gems_medium', 'gems_small', 'layout_slots_plus']);
   });
 });
 

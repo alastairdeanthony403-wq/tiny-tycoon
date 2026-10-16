@@ -1,3 +1,4 @@
+import type { StoreTab } from './premiumShop';
 import type { Game } from '../sim/game';
 import type { SfxName } from '../audio/audio';
 
@@ -6,7 +7,7 @@ export type PlacementRequest = { kind: string; mode: 'buy' } | { kind: string; m
 export interface ConfirmOpts {
   icon: string;
   title: string;
-  text: string;
+  text: string | Node;
   okLabel: string;
   onOk: () => void;
   danger?: boolean;
@@ -26,5 +27,5 @@ export interface AppApi {
   openMissions(): void;
   expandShop(): void;
   skipTutorial(): void;
-  openPremium(tab?: 'featured' | 'cosmetic' | 'gems' | 'convenience', productId?: string): void;
+  openPremium(tab?: StoreTab | 'convenience', productId?: string): void;
 }
