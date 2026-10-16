@@ -59,7 +59,10 @@ Products may declare `requires: { level?, lifetimeRevenue? }`. `MonetizationMana
 |---|---|---|---|---|---|
 | cosmetic_neon_nights | non-consumable | Neon Nights shop theme. Requires level 10 and £2,500 lifetime revenue | 150 | £2.99 | com.tinytycoon.cosmetic_neon_nights |
 | cosmetic_golden_shelves | non-consumable | Golden Shelves shop theme (gold shelf frames, display trim, checkout accents, signage, uniforms). Requires level 15 and £25,000 lifetime revenue | 200 | — (Gems only, `realMoney: false`; not sold through the app stores) | com.tinytycoon.cosmetic_golden_shelves (reserved, not registered) |
+| cosmetic_cozy_autumn | non-consumable | Cozy Autumn shop theme (russet/oak palette, autumn sign and uniforms, drifting leaves). Requires level 8 and £8,000 lifetime revenue | 120 | — (Gems only, `realMoney: false`) | com.tinytycoon.cosmetic_cozy_autumn (reserved, not registered) |
+| cosmetic_ocean_breeze | non-consumable | Ocean Breeze shop theme (sea-glass palette, seaside sign and uniforms, floor caustics). Requires level 12 and £40,000 lifetime revenue | 120 | — (Gems only, `realMoney: false`) | com.tinytycoon.cosmetic_ocean_breeze (reserved, not registered) |
 | bundle_staff_outfits | non-consumable | Smart Suits + Retro Diner outfits | 200 | £1.99 | com.tinytycoon.bundle_staff_outfits |
+| bundle_outfits_deluxe | non-consumable | Barista, Chef Whites, Space Explorer and Holiday outfits. Requires level 6 | 250 | — (Gems only, `realMoney: false`) | com.tinytycoon.bundle_outfits_deluxe (reserved, not registered) |
 | bundle_seasonal_decorations | non-consumable | Snowman, pumpkin lantern, fairy lights (placeable decor) | 200 | £1.99 | com.tinytycoon.bundle_seasonal_decorations |
 | gems_small | consumable | 100 Gems | — | £0.99 | com.tinytycoon.gems_small |
 | gems_medium | consumable | 550 Gems | — | £4.99 | com.tinytycoon.gems_medium |

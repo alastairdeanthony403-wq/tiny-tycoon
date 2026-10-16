@@ -26,11 +26,11 @@ function setup() {
 }
 
 describe('catalog', () => {
-  it('has the nine required products with stable unique ids and store ids', () => {
+  it('has the required products with stable unique ids and store ids', () => {
     const ids = PREMIUM_CATALOG.map((p) => p.id).sort();
-    expect(ids).toEqual(['automation_basic', 'bundle_seasonal_decorations', 'bundle_staff_outfits', 'cosmetic_golden_shelves', 'cosmetic_neon_nights', 'gems_large', 'gems_medium', 'gems_small', 'layout_slots_plus']);
+    expect(ids).toEqual(['automation_basic', 'bundle_outfits_deluxe', 'bundle_seasonal_decorations', 'bundle_staff_outfits', 'cosmetic_cozy_autumn', 'cosmetic_golden_shelves', 'cosmetic_neon_nights', 'cosmetic_ocean_breeze', 'gems_large', 'gems_medium', 'gems_small', 'layout_slots_plus']);
     const storeIds = PREMIUM_CATALOG.flatMap((p) => [p.storeIds.ios, p.storeIds.android]);
-    expect(new Set(PREMIUM_CATALOG.map((p) => p.storeIds.ios)).size).toBe(9);
+    expect(new Set(PREMIUM_CATALOG.map((p) => p.storeIds.ios)).size).toBe(PREMIUM_CATALOG.length);
     expect(storeIds.every((s) => /^com\.tinytycoon\.[a-z_]+$/.test(s))).toBe(true);
   });
 

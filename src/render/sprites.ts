@@ -1,9 +1,10 @@
 import type { PlacedObject } from '../core/types';
-import { iso, shade, faces, depth, isoVec } from './iso';
-import { box, ellipse, emoji, roundRect, badge, diamond, frontChain, frontSides } from './shapes';
+import { iso, shade, faces, depth } from './iso';
+import { box, ellipse, roundRect, badge, diamond, frontChain, frontSides } from './shapes';
 import { getProduct } from '../config/products';
 import type { ShopSkin } from './skins';
 import { OBJECT_MAP } from '../config/objects';
+import { drawSprite } from '../assets/spriteCache';
 
 const SHELF_TIERS = [
   { color: '#e9c08f', h: 26, trim: '#a0522d' },
@@ -69,8 +70,7 @@ function productsOnTop(ctx: CanvasRenderingContext2D, o: PlacedObject, x0: numbe
     const [gx, gy] = slotPos(i);
     const pt = iso(gx, gy, z);
     if (i < shown) {
-      ellipse(ctx, pt.x, pt.y + 1, size * 0.45, size * 0.2, 'rgba(0,0,0,0.18)');
-      emoji(ctx, p.icon, pt.x, pt.y - size * 0.35, size);
+      drawSprite(ctx, `product.${p.id}`, pt.x, pt.y + 1, { size: size / 22 });
     } else {
       ellipse(ctx, pt.x, pt.y, size * 0.3, size * 0.14, 'rgba(0,0,0,0.08)');
     }
@@ -186,9 +186,12 @@ function drawObjectBody(ctx: CanvasRenderingContext2D, o: PlacedObject, info: Ob
           const u = (i % 3 + 0.5) / 3;
           const row = Math.floor(i / 3);
           const q = iso(ax + (bx - ax) * u, ay + (by - ay) * u, 12 + row * (h - 22) / 2);
-          ctx.fillStyle = i < n ? p?.color ?? '#fff' : 'rgba(255,255,255,0.25)';
-          roundRect(ctx, q.x - 2.5, q.y - 8, 5, 9, 2);
-          ctx.fill();
+          if (i < n && p) drawSprite(ctx, `product.${p.id}`, q.x, q.y + 1, { size: 0.36 });
+          else {
+            ctx.fillStyle = 'rgba(255,255,255,0.25)';
+            roundRect(ctx, q.x - 2.5, q.y - 8, 5, 9, 2);
+            ctx.fill();
+          }
         }
       };
       for (const [ax, ay, bx, by] of frontSides(x + 0.12, y + 0.12, x + 0.88, y + 0.88)) {
@@ -198,7 +201,7 @@ function drawObjectBody(ctx: CanvasRenderingContext2D, o: PlacedObject, info: Ob
       }
       const top = iso(x + 0.5, y + 0.5, h);
       const p = getProduct(o.productId);
-      if (p) emoji(ctx, p.icon, top.x, top.y - 6, 13);
+      if (p) drawSprite(ctx, `product.${p.id}`, top.x, top.y + 2, { size: 0.55 });
       if (o.tier >= 3) badge(ctx, '❄', top.x + 16, top.y - 4, '#4cc9f0', '#fff', 8);
       break;
     }
@@ -296,7 +299,7 @@ function drawObjectBody(ctx: CanvasRenderingContext2D, o: PlacedObject, info: Ob
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 2;
       ctx.stroke();
-      emoji(ctx, '⭐', (a.x + b.x) / 2, (a.y + b.y) / 2 - tH / 2, 12);
+      drawSprite(ctx, 'ui.star', (a.x + b.x) / 2, (a.y + b.y) / 2 - tH / 2 + 7, { size: 0.85 });
       break;
     }
     case 'lamp': {
@@ -408,7 +411,7 @@ function drawObjectBody(ctx: CanvasRenderingContext2D, o: PlacedObject, info: Ob
       const t = iso(x + 0.5, y + 0.5, 12);
       ellipse(ctx, t.x, t.y - 14, 8, 12, '#adb5bd');
       ellipse(ctx, t.x, t.y - 30, 6, 6, '#adb5bd');
-      emoji(ctx, '👑', t.x, t.y - 38, 10);
+      drawSprite(ctx, 'ui.crown', t.x, t.y - 33, { size: 0.7 });
       break;
     }
     case 'arcade': {
@@ -428,142 +431,16 @@ function drawObjectBody(ctx: CanvasRenderingContext2D, o: PlacedObject, info: Ob
 
 // ------------------------------------------------------------------ people
 
-export interface PersonStyle {
-  body: string;
-  head: string;
-  hair: string;
-  scale: number;
-  hat?: 'chef' | 'cap' | 'tie' | 'hard' | 'star';
-  apron?: string;
-}
-
-export interface PersonPose {
-  moving: boolean;
-  phase: number;
-  facing: number;
-  carrying?: boolean;
-  working?: boolean;
-  bounce?: number;
-  angry?: boolean;
-  reach?: boolean;
-}
-
-export function drawPerson(ctx: CanvasRenderingContext2D, sx: number, sy: number, st: PersonStyle, pose: PersonPose): void {
-  const s = st.scale;
-  const walk = pose.moving ? Math.sin(pose.phase * 10) : 0;
-  const bob = pose.moving ? Math.abs(Math.sin(pose.phase * 10)) * 1.5 : Math.sin(pose.phase * 2) * 0.5;
-  const jump = pose.bounce ? Math.abs(Math.sin(pose.bounce * 12)) * 5 : 0;
-  const shake = pose.angry ? Math.sin(pose.phase * 40) * 1 : 0;
-  const x = sx + shake;
-  const y = sy - bob - jump;
-  ellipse(ctx, sx, sy, 8 * s, 3.5 * s, 'rgba(0,0,0,0.2)');
-  // legs
-  ctx.fillStyle = shade(st.body, -0.5);
-  roundRect(ctx, x - 4 * s, y - 7 * s + walk * 1.5 * s, 3 * s, 7 * s, 1.5 * s);
-  ctx.fill();
-  roundRect(ctx, x + 1 * s, y - 7 * s - walk * 1.5 * s, 3 * s, 7 * s, 1.5 * s);
-  ctx.fill();
-  // body
-  roundRect(ctx, x - 6 * s, y - 20 * s, 12 * s, 14 * s, 5 * s);
-  ctx.fillStyle = st.body;
-  ctx.fill();
-  if (st.apron) {
-    roundRect(ctx, x - 4 * s, y - 16 * s, 8 * s, 9 * s, 2 * s);
-    ctx.fillStyle = st.apron;
-    ctx.fill();
-  }
-  if (st.hat === 'tie') {
-    ctx.fillStyle = '#e63946';
-    ctx.fillRect(x - 1 * s, y - 19 * s, 2 * s, 7 * s);
-  }
-  // arms
-  ctx.strokeStyle = st.body;
-  ctx.lineWidth = 3 * s;
-  ctx.lineCap = 'round';
-  const armSwing = pose.moving ? walk * 3 : pose.working ? Math.sin(pose.phase * 18) * 3 : 0;
-  ctx.beginPath();
-  if (pose.carrying || pose.reach) {
-    ctx.moveTo(x - 5 * s, y - 17 * s);
-    ctx.lineTo(x - 3 * s, y - 24 * s);
-    ctx.moveTo(x + 5 * s, y - 17 * s);
-    ctx.lineTo(x + 3 * s, y - 24 * s);
-  } else {
-    ctx.moveTo(x - 6 * s, y - 17 * s);
-    ctx.lineTo(x - 7 * s, y - 10 * s + armSwing);
-    ctx.moveTo(x + 6 * s, y - 17 * s);
-    ctx.lineTo(x + 7 * s, y - 10 * s - armSwing);
-  }
-  ctx.stroke();
-  // head
-  const hy = y - 26 * s;
-  ellipse(ctx, x, hy, 6.5 * s, 6.5 * s, st.head);
-  // hair
-  ctx.fillStyle = st.hair;
-  ctx.beginPath();
-  ctx.arc(x, hy - 1 * s, 6.6 * s, Math.PI * 1.05, Math.PI * 1.95);
-  ctx.fill();
-  // face (only when the person is turned toward the camera, whatever its rotation)
-  const fdir: [number, number] = ([[1, 0], [0, 1], [-1, 0], [0, -1]] as [number, number][])[((pose.facing % 4) + 4) % 4];
-  if (faces(fdir[0], fdir[1])) {
-    const fx = isoVec(fdir[0], fdir[1]).x >= 0 ? 2 * s : -2 * s;
-    ctx.fillStyle = '#222';
-    ctx.beginPath();
-    ctx.arc(x + fx - 2 * s, hy + 0.5 * s, 0.9 * s, 0, Math.PI * 2);
-    ctx.arc(x + fx + 2 * s, hy + 0.5 * s, 0.9 * s, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = pose.angry ? '#7a0000' : '#a0522d';
-    ctx.lineWidth = 0.8 * s;
-    ctx.beginPath();
-    if (pose.angry) ctx.arc(x + fx, hy + 4.5 * s, 1.6 * s, Math.PI * 1.15, Math.PI * 1.85);
-    else ctx.arc(x + fx, hy + 2.2 * s, 1.6 * s, Math.PI * 0.15, Math.PI * 0.85);
-    ctx.stroke();
-    ellipse(ctx, x + fx - 3.5 * s, hy + 2 * s, 1.2 * s, 0.8 * s, 'rgba(255,120,120,0.35)');
-    ellipse(ctx, x + fx + 3.5 * s, hy + 2 * s, 1.2 * s, 0.8 * s, 'rgba(255,120,120,0.35)');
-  }
-  // hats
-  if (st.hat === 'chef') {
-    ellipse(ctx, x, hy - 8 * s, 6 * s, 4 * s, '#fff');
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(x - 4 * s, hy - 8 * s, 8 * s, 4 * s);
-  } else if (st.hat === 'cap') {
-    ctx.fillStyle = '#3a86ff';
-    ctx.beginPath();
-    ctx.arc(x, hy - 2 * s, 6.8 * s, Math.PI, Math.PI * 2);
-    ctx.fill();
-    ctx.fillRect(x - 1 * s, hy - 3 * s, 9 * s, 2 * s);
-  } else if (st.hat === 'hard') {
-    ctx.fillStyle = '#ffd60a';
-    ctx.beginPath();
-    ctx.arc(x, hy - 2 * s, 7.2 * s, Math.PI, Math.PI * 2);
-    ctx.fill();
-  } else if (st.hat === 'star') {
-    emoji(ctx, '😎', x, hy, 11 * s);
-  }
-  if (pose.carrying) drawCrateAt(ctx, x, y - 30 * s, 7 * s);
-}
-
-function drawCrateAt(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {
-  roundRect(ctx, x - r, y - r, r * 2, r * 1.6, 2);
-  ctx.fillStyle = '#c68b59';
-  ctx.fill();
-  ctx.strokeStyle = '#8b5a2b';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(x - r, y - r * 0.2);
-  ctx.lineTo(x + r, y - r * 0.2);
-  ctx.stroke();
-}
-
+/** Emote kinds with procedural icons (assets ui.emote_*). */
 export const EMOTE_ICONS: Record<string, string> = {
-  happy: '😊',
-  love: '😍',
-  angry: '😠',
-  question: '❓',
-  sad: '😞',
-  money: '💷',
-  wow: '🤩',
-  sleep: '💤',
+  happy: 'ui.emote_happy',
+  love: 'ui.emote_love',
+  angry: 'ui.emote_angry',
+  question: 'ui.emote_question',
+  sad: 'ui.emote_sad',
+  money: 'ui.emote_money',
+  wow: 'ui.emote_wow',
+  sleep: 'ui.emote_sleep',
 };
 
 export function drawEmote(ctx: CanvasRenderingContext2D, x: number, y: number, kind: string, t: number): void {
@@ -582,5 +459,5 @@ export function drawEmote(ctx: CanvasRenderingContext2D, x: number, y: number, k
   ctx.lineTo(x + 3, y - 4 * pop);
   ctx.fillStyle = '#fff';
   ctx.fill();
-  emoji(ctx, icon, x, y - 12 * pop, 11 * pop);
+  if (pop > 0.05) drawSprite(ctx, icon, x, y - 5.5 * pop, { size: 0.78 * pop });
 }

@@ -3,9 +3,14 @@ import type { Customer, EmployeeRuntime } from '../sim/world';
 import type { Dir, PlacedObject } from '../core/types';
 import { Camera, iso, isoVec, unIso, shade, setView, depth, faces, TW, TH } from './iso';
 import { box, diamond, diamondPath, ellipse, emoji, roundRect, badge } from './shapes';
-import { drawObject, drawPerson, drawEmote, objectHeight } from './sprites';
-import type { PersonStyle } from './sprites';
+import { drawObject, drawEmote, objectHeight } from './sprites';
+import { drawCharacter } from '../assets/art/characters';
+import type { Appearance, PoseState } from '../assets/art/characters';
+import { customerAppearance, staffAppearance } from '../assets/characters';
+import { registerBuiltinAssets } from '../assets';
 import { ParticleSystem } from './particles';
+import { WorldRenderer } from './world';
+import { drawSprite } from '../assets/spriteCache';
 import { LOCATION_MAP } from '../config/locations';
 import { THEME_MAP } from '../config/cosmetics';
 import { CUSTOMER_MAP } from '../config/customers';
@@ -38,21 +43,6 @@ export interface PlacementMode {
   valid: Map<string, { ok: boolean; dir: Dir }>;
 }
 
-/** Premium staff outfits (bundle_staff_outfits): body + apron colours per outfit. */
-const OUTFITS: Record<string, { body: string; apron: string }> = {
-  smart: { body: '#1d3557', apron: '#ffd166' },
-  diner: { body: '#ff6b9a', apron: '#2ec4b6' },
-};
-
-
-const STAFF_STYLE: Record<string, Partial<PersonStyle>> = {
-  cashier: { hat: 'cap', apron: '#3a86ff' },
-  stocker: { hat: 'hard', apron: '#fb8500' },
-  cleaner: { apron: '#2a9d8f' },
-  chef: { hat: 'chef', apron: '#ffffff' },
-  manager: { hat: 'tie' },
-};
-
 /** Renders the miniature-diorama shop with Canvas 2D. Pure view: reads game state, never mutates it. */
 const motionQuery = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
 function prefersReducedMotion(): boolean {
@@ -84,12 +74,35 @@ export class Renderer {
   private wallH = 46;
   /** Building features of the current shop tier (see config/shopTiers.ts). */
   private features = new Set<string>();
+  private skinTrim: string | null = null;
   private pivot = { x: 0, y: 0 };
 
+  /** Appearance per character id (deterministic, so the cache is only a speed-up). */
+  private looks = new Map<string, Appearance>();
+  private world: WorldRenderer;
+
+  private look(key: string, make: () => Appearance): Appearance {
+    let a = this.looks.get(key);
+    if (!a) {
+      if (this.looks.size > 600) this.looks.clear();
+      a = make();
+      this.looks.set(key, a);
+    }
+    return a;
+  }
+
+  /** Facing index (0 +x, 1 +y, 2 −x, 3 −y) → billboard view for the current camera angle. */
+  private view(facing: number): { front: boolean; right: boolean } {
+    const d = ([[1, 0], [0, 1], [-1, 0], [0, -1]] as [number, number][])[((facing % 4) + 4) % 4];
+    return { front: faces(d[0], d[1]), right: isoVec(d[0], d[1]).x >= 0 };
+  }
+
   constructor(private canvas: HTMLCanvasElement, private game: Game) {
+    registerBuiltinAssets();
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Canvas 2D not supported');
     this.ctx = ctx;
+    this.world = new WorldRenderer(ctx);
     for (let i = 0; i < 40; i++) this.stars.push({ x: Math.random(), y: Math.random() * 0.5 });
     this.bindEvents();
     this.resize();
@@ -237,6 +250,52 @@ export class Renderer {
     ctx.stroke();
   }
 
+  /** Ocean Breeze: soft caustic light rings on the floor (static under reduced motion). */
+  private oceanLight(S: number): void {
+    const ctx = this.ctx;
+    const t = this.reducedMotion ? 0 : this.time;
+    ctx.lineWidth = 1.5;
+    const n = Math.min(14, S * 2);
+    for (let i = 0; i < n; i++) {
+      const gx = ((i * 2.37) % S) + 0.5;
+      const gy = ((i * 1.61 + 0.7) % S) + 0.3;
+      const ph = (t * 0.35 + i * 0.37) % 1;
+      const p = iso(gx, gy);
+      ctx.strokeStyle = `rgba(72,202,228,${0.35 * (1 - ph)})`;
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y, 6 + ph * 22, (6 + ph * 22) * 0.5, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  /** Cozy Autumn: a few leaves drift down through the shop (resting on the floor under reduced motion). */
+  private autumnLeaves(S: number): void {
+    const ctx = this.ctx;
+    const cols = ['#e76f51', '#f4a261', '#d68c45', '#a44a3f', '#ffb703'];
+    const n = Math.min(12, S + 4);
+    for (let i = 0; i < n; i++) {
+      const fall = this.reducedMotion ? 1 : ((this.time * 0.12 + i * 0.173) % 1);
+      const gx = ((i * 2.71 + (this.reducedMotion ? 0 : this.time * 0.05)) % S) + 0.3;
+      const gy = ((i * 1.93) % S) + 0.4;
+      const p = iso(gx, gy, (1 - fall) * (this.wallH + 20));
+      const rot = this.reducedMotion ? i : this.time * 2 + i;
+      ctx.save();
+      ctx.translate(p.x + (this.reducedMotion ? 0 : Math.sin(this.time * 1.5 + i) * 6), p.y);
+      ctx.rotate(rot);
+      ctx.fillStyle = cols[i % cols.length];
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 4, 2.2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(80,40,10,0.5)';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(-4, 0);
+      ctx.lineTo(4, 0);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   /** Glowing neon tubes along the walls, lit windows and a buzzing sign. */
   private neonTrims(S: number): void {
     const ctx = this.ctx;
@@ -360,6 +419,7 @@ export class Renderer {
     const loc = LOCATION_MAP[shop.locationId] ?? LOCATION_MAP.neighborhood;
     const skinDef = getSkin(this.activeSkin());
     const skin = skinDef?.effect ?? null;
+    this.skinTrim = skinDef?.displayTrim ?? skinDef?.shelf?.trim ?? null;
     // A premium skin overrides the Star theme while equipped; unequipping shows the Star theme again.
     const baseTheme = THEME_MAP[g.state.cosmetics.theme] ?? THEME_MAP.classic;
     const theme = skinDef ? { ...baseTheme, ...skinDef.palette } : baseTheme;
@@ -402,7 +462,7 @@ export class Renderer {
     // Outside things (scenery, people on the street) are split into those behind the shop and those
     // between the shop and the camera; the latter are drawn last and faded where they cover the shop.
     const inside: Customer[] = [];
-    const outside: { x: number; y: number; draw: () => void }[] = this.sceneryItems(S, loc);
+    const outside: { x: number; y: number; draw: () => void }[] = this.sceneryItems(S, loc, skin === 'neon' || !!loc.theme.night);
     for (const c of g.world.customers) {
       if (c.pos.x < 0) outside.push({ x: c.pos.x, y: c.pos.y, draw: () => this.drawCustomer(c) });
       else inside.push(c);
@@ -416,8 +476,10 @@ export class Renderer {
     this.drawWalls(S, theme, 'far');
     if (skin === 'neon') this.neonTrims(S);
     if (skin === 'golden') this.goldenLighting(S);
+    if (skin === 'ocean') this.oceanLight(S);
     this.drawSortables(inside, S, theme);
     this.drawWalls(S, theme, 'near');
+    if (skin === 'autumn') this.autumnLeaves(S);
     front.sort((a, b) => depth(a.x, a.y) - depth(b.x, b.y));
     for (const it of front) {
       ctx.save();
@@ -436,61 +498,15 @@ export class Renderer {
   // ------------------------------------------------------------ outside
 
   private drawOutsideGround(S: number, loc: (typeof LOCATION_MAP)[string]): void {
-    const ctx = this.ctx;
-    const th = loc.theme;
-    const ext = S + 7;
-    // ground
-    diamondPath(ctx, -8, -8, ext + 8, ext + 8);
-    ctx.fillStyle = th.ground;
-    ctx.fill();
-    for (let y = -8; y < ext; y += 2) for (let x = -8; x < ext; x += 2) if (((x + y) / 2) % 2 === 0) diamond(ctx, x, y, 2, th.ground2);
-    // road + sidewalk on the left (the street customers walk along)
-    diamondPath(ctx, -4.2, -8, 2.6, ext + 8);
-    ctx.fillStyle = th.road;
-    ctx.fill();
-    if (loc.special === 'tourists') {
-      // the sea, with a little wave animation
-      for (let y = -8; y < ext; y += 1) {
-        const w = Math.sin(this.time * 2 + y) * 0.08;
-        diamond(ctx, -4.2 + w, y, 0.25, 'rgba(255,255,255,0.5)');
-      }
-    } else {
-      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([10, 12]);
-      const a = iso(-2.9, -8);
-      const b = iso(-2.9, ext);
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-    diamondPath(ctx, -1.6, -8, 1.6, ext + 8);
-    ctx.fillStyle = loc.special === 'tourists' ? '#ffe8b0' : '#dee2e6';
-    ctx.fill();
+    this.world.drawGround(loc.id, S, this.time, !this.reducedMotion);
     // entrance mat in front of the door
-    diamond(ctx, -1, DOOR_TILE.y, 1, 'rgba(180,60,60,0.45)', 0.5, 0.1);
+    diamond(this.ctx, -1, DOOR_TILE.y, 1, 'rgba(180,60,60,0.45)', 0.5, 0.1);
   }
 
-  /** Trees / buildings / lanterns around the shop, as depth-sortable items. */
-  private sceneryItems(S: number, loc: (typeof LOCATION_MAP)[string]): { x: number; y: number; draw: () => void }[] {
-    const seed = (n: number) => {
-      const v = Math.sin(n * 127.1 + S * 3.7) * 43758.5453;
-      return v - Math.floor(v);
-    };
-    const out: { x: number; y: number; draw: () => void }[] = [];
-    for (let i = 0; i < 6; i++) {
-      const x = S + 1.5 + seed(i) * 3;
-      const y = -1 + i * ((S + 3) / 6);
-      out.push({ x, y, draw: () => this.scenery(x, y, loc.special, i) });
-    }
-    for (let i = 0; i < 5; i++) {
-      const x = 1 + i * ((S + 1) / 5);
-      const y = -2.2 - seed(i + 9) * 1.5;
-      out.push({ x, y, draw: () => this.scenery(x, y, loc.special, i + 10) });
-    }
-    return out;
+  /** Buildings, props and traffic around the shop, as depth-sortable items. */
+  private sceneryItems(S: number, loc: (typeof LOCATION_MAP)[string], lit: boolean): { x: number; y: number; draw: () => void }[] {
+    const seasons = this.game.mods.seasons().map((x) => x.id);
+    return this.world.items(loc.id, S, seasons, this.time, { animate: !this.reducedMotion, lit });
   }
 
   /** True when a ground point outside the shop lies between the shop and the camera. */
@@ -519,43 +535,45 @@ export class Renderer {
     return inside(iso(x, y, 20)) || inside(iso(x, y, 50));
   }
 
-  private scenery(x: number, y: number, special: string | undefined, i: number): void {
+  /** Retractable-belt barriers along a queue lane (visual only; the lane itself is sim data). */
+  private queueBarriers(tiles: { x: number; y: number }[]): void {
+    if (tiles.length < 2) return;
     const ctx = this.ctx;
-    const p = iso(x, y);
-    if (special === 'downtown' || special === 'busy') {
-      const h = 50 + (i % 3) * 25;
-      box(ctx, x - 0.6, y - 0.6, x + 0.6, y + 0.6, h, special === 'busy' ? '#adb5bd' : ['#6c757d', '#8d99ae', '#5c677d'][i % 3]);
-      for (let k = 0; k < h / 16 - 1 && faces(1, 0); k++) {
-        const w = iso(x + 0.6, y, 12 + k * 14);
-        ctx.fillStyle = (i + k) % 3 ? '#ffe066' : '#caf0f8';
-        ctx.fillRect(w.x - 8, w.y - 8, 6, 6);
+    const posts: [{ x: number; y: number }[], { x: number; y: number }[]] = [[], []];
+    for (let i = 0; i < tiles.length; i++) {
+      const a = tiles[Math.max(0, i - 1)];
+      const b = tiles[Math.min(tiles.length - 1, i + 1)];
+      const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      const px = -(b.y - a.y) / len;
+      const py = (b.x - a.x) / len;
+      const cx = tiles[i].x + 0.5;
+      const cy = tiles[i].y + 0.5;
+      posts[0].push({ x: cx + px * 0.46, y: cy + py * 0.46 });
+      posts[1].push({ x: cx - px * 0.46, y: cy - py * 0.46 });
+    }
+    const belt = this.skinTrim ?? '#e63946';
+    for (const side of posts) {
+      ctx.strokeStyle = belt;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      side.forEach((p, i) => {
+        const s = iso(p.x, p.y, 9);
+        if (i === 0) ctx.moveTo(s.x, s.y);
+        else ctx.lineTo(s.x, s.y);
+      });
+      ctx.stroke();
+      for (const p of side) {
+        const a = iso(p.x, p.y, 0);
+        const b = iso(p.x, p.y, 12);
+        ellipse(ctx, a.x, a.y, 3.2, 1.6, 'rgba(0,0,0,0.25)');
+        ctx.strokeStyle = '#adb5bd';
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+        ellipse(ctx, b.x, b.y, 1.8, 1.4, '#dee2e6');
       }
-    } else if (special === 'tourists') {
-      ellipse(ctx, p.x, p.y, 10, 5, 'rgba(0,0,0,0.15)');
-      ctx.strokeStyle = '#8b5e34';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      ctx.quadraticCurveTo(p.x + 6, p.y - 25, p.x + 3, p.y - 45);
-      ctx.stroke();
-      emoji(ctx, '🌴', p.x + 3, p.y - 50, 26);
-    } else if (special === 'night') {
-      ctx.strokeStyle = '#ffd166';
-      ctx.lineWidth = 1;
-      const top = p.y - 50;
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      ctx.lineTo(p.x, top);
-      ctx.stroke();
-      const glow = 0.6 + 0.4 * Math.sin(this.time * 3 + i);
-      ellipse(ctx, p.x, top, 14, 14, `rgba(255,158,0,${0.25 * glow})`);
-      emoji(ctx, '🏮', p.x, top, 16);
-    } else {
-      ellipse(ctx, p.x, p.y, 12, 6, 'rgba(0,0,0,0.15)');
-      ctx.fillStyle = '#8b5e34';
-      ctx.fillRect(p.x - 2, p.y - 18, 4, 18);
-      ellipse(ctx, p.x, p.y - 26, 14, 14, i % 2 ? '#2d6a4f' : '#40916c');
-      ellipse(ctx, p.x - 5, p.y - 32, 9, 9, i % 2 ? '#40916c' : '#52b788');
     }
   }
 
@@ -575,7 +593,7 @@ export class Renderer {
       }
     }
     this.floorFinish(S, theme);
-    // queue lane markings
+    // queue lanes: dashed floor marks plus belt barriers along both sides
     for (const [, tiles] of grid.queues) {
       for (const q of tiles) {
         ctx.strokeStyle = 'rgba(0,0,0,0.12)';
@@ -585,6 +603,7 @@ export class Renderer {
         ctx.stroke();
         ctx.setLineDash([]);
       }
+      this.queueBarriers(tiles);
     }
     // stockroom access
     diamond(ctx, STOCKROOM_TILE.x, STOCKROOM_TILE.y, 1, 'rgba(0,0,0,0.06)', 0, 0.1);
@@ -593,7 +612,7 @@ export class Renderer {
       const p = iso(d.x + 0.5, d.y + 0.5);
       ellipse(ctx, p.x, p.y, 13, 6, 'rgba(120,85,40,0.55)');
       ellipse(ctx, p.x + 6, p.y + 2, 6, 3, 'rgba(120,85,40,0.45)');
-      emoji(ctx, '💧', p.x - 6, p.y - 6, 8);
+      drawSprite(ctx, 'ui.drop', p.x - 6, p.y - 1, { size: 0.55 });
     }
     // construction zone / next expansion ghost
     const c = g.shop.construction;
@@ -624,7 +643,7 @@ export class Renderer {
       roundRect(ctx, mid.x - 38, mid.y - 4, 76 * prog, 8, 4);
       ctx.fillStyle = '#ffd60a';
       ctx.fill();
-      emoji(ctx, '🚧', mid.x, mid.y - 18, 18);
+      drawSprite(ctx, 'ui.barrier', mid.x, mid.y - 8, { size: 1.2 });
     } else {
       const next = g.shopMgr.nextExpansion();
       if (next) {
@@ -1018,34 +1037,39 @@ export class Renderer {
     const def = CUSTOMER_MAP[c.type];
     if (!def) return;
     const p = iso(c.pos.x + (c.state === 'queue' ? 0 : c.offset.x), c.pos.y + (c.state === 'queue' ? 0 : c.offset.y));
-    const style: PersonStyle = { ...def.colors, scale: c.type === 'child' ? 0.78 : 1, hat: c.type === 'celebrity' ? 'star' : undefined };
-    drawPerson(this.ctx, p.x, p.y, style, {
-      moving: c.moving,
-      phase: this.time + c.id,
-      facing: c.facing,
-      reach: c.state === 'take',
-      bounce: c.state === 'pay' ? c.stateTime : 0,
-      angry: c.angry,
-    });
+    const look = this.look(`c${c.id}:${c.type}`, () => customerAppearance(c.type, c.id));
+    const happy = !!c.emote && (c.emote === 'happy' || c.emote === 'love' || c.emote === 'wow') && c.emoteTime < 0.9;
+    let state: PoseState = 'idle';
+    if (c.moving) state = 'walk';
+    else if (c.state === 'take') state = 'reach';
+    else if (c.state === 'browse' || c.state === 'select' || c.state === 'waiting_stock') state = 'browse';
+    else if (c.state === 'queue' || c.state === 'wait_queue') state = 'queue';
+    else if (c.state === 'pay') state = 'pay';
+    if (happy && !c.moving && !this.reducedMotion) state = 'celebrate';
+    const v = this.view(c.facing);
+    drawCharacter(this.ctx, p.x, p.y, look, { state, t: this.reducedMotion && state !== 'walk' ? 0 : this.time + c.id * 0.37, front: v.front, right: v.right, angry: c.angry });
     if (c.type === 'celebrity' && Math.random() < 0.05) this.particles.emit('sparkle', p.x, p.y - 30, 1, { spread: 20, up: 20 });
   }
 
   private drawEmployee(e: EmployeeRuntime): void {
     const data = this.game.shop.staff.find((s) => s.id === e.id);
     const def = STAFF_MAP[e.type];
+    if (!def) return;
     const p = iso(e.pos.x, e.pos.y);
     // An equipped staff outfit wins; otherwise the shop theme may supply a matching uniform.
-    const outfit = OUTFITS[this.activeOutfit() ?? ''] ?? getSkin(this.activeSkin())?.uniform;
-    const style: PersonStyle = { body: def.color === '#ffffff' ? '#e9ecef' : def.color, head: '#e0ac69', hair: '#4a3728', scale: 1.02, ...STAFF_STYLE[e.type], ...(outfit ? { body: outfit.body, apron: outfit.apron } : {}) };
-    drawPerson(this.ctx, p.x, p.y, style, {
-      moving: e.moving,
-      phase: this.time + e.id * 3,
-      facing: e.facing,
-      carrying: e.carrying > 0,
-      working: e.workAnim > 0,
-    });
-    if (e.task.kind === 'scrub' && Math.random() < 0.3) this.particles.emit('sparkle', p.x, p.y - 4, 1, { spread: 15, up: 20 });
-    if (data && data.level > 1) badge(this.ctx, `${data.level}`, p.x + 9, p.y - 36, '#2b2d42', '#ffd23f', 6);
+    const outfit = this.activeOutfit();
+    const uniform = getSkin(this.activeSkin())?.uniform;
+    const look = this.look(`s${e.id}:${e.type}:${outfit ?? ''}:${uniform ? uniform.body : ''}`, () => staffAppearance(e.type, e.id, outfit, uniform));
+    const k = e.task.kind;
+    let state: PoseState = 'idle';
+    if (e.moving) state = 'walk';
+    else if (k === 'scrub' || k === 'clean') state = 'clean';
+    else if (k === 'pick' || k === 'fill') state = 'restock';
+    else if (e.workAnim > 0) state = 'work';
+    const v = this.view(e.facing);
+    drawCharacter(this.ctx, p.x, p.y, look, { state, t: this.reducedMotion && state !== 'walk' ? 0 : this.time + e.id * 0.53, front: v.front, right: v.right, carrying: e.carrying > 0 });
+    if (k === 'scrub' && Math.random() < 0.3) this.particles.emit('sparkle', p.x, p.y - 4, 1, { spread: 15, up: 20 });
+    if (data && data.level > 1) badge(this.ctx, `${data.level}`, p.x + 10, p.y - 44, '#2b2d42', '#ffd23f', 6);
   }
 
   // -------------------------------------------------------------- overlays

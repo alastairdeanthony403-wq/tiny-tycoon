@@ -21,6 +21,8 @@ import { PREMIUM_MAP } from './monetization/catalog';
 import { NoAdProvider, SimulatedAdProvider, NativeAdBridgeProvider } from './ads/providers';
 import type { RewardedAdProvider } from './ads/types';
 import { ADS } from './config/ads';
+import { loadBundledImages } from './assets/images';
+import { clearSpriteCache } from './assets/spriteCache';
 
 /**
  * Picks the rewarded-ad provider: a native ad plugin when the app shell provides one; the
@@ -139,6 +141,8 @@ class App {
     this.ads = new AdController(() => this.game, createAdProvider(), (n, p) => this.analytics.track(n, p));
     const canvas = document.getElementById('game') as HTMLCanvasElement;
     this.renderer = new Renderer(canvas, this.game);
+    // Optional bundled PNG artwork (src/assets/images/<asset id>.png) replaces procedural art once loaded.
+    void loadBundledImages().then(() => clearSpriteCache());
     this.restoreCamera();
     this.ui = new UIManager(document.getElementById('ui')!, canvas, this.game, this.renderer, this.audio, this.haptics, this.notifications, {
       debugEnabled: import.meta.env.DEV,

@@ -2,7 +2,7 @@
 
 A cute, casual shop-management / incremental tycoon game. You start with a tiny 3×3 shop and grow it into a retail empire: sell products, upgrade shelves and checkouts, expand the building through five shop tiers, hire staff who really walk around, open departments and new locations, then franchise for permanent bonuses. You can rotate, tilt and zoom the camera all the way around your shop.
 
-**Stack:** TypeScript, Vite, Canvas 2D (an orthographic diorama renderer with a 360° camera), DOM UI, Web Audio (all sounds and music are synthesized), Vitest. There are no art or audio asset files; everything is drawn and generated in code.
+**Stack:** TypeScript, Vite, Canvas 2D (an orthographic diorama renderer with a 360° camera), DOM UI, Web Audio (all sounds and music are synthesized), Vitest. There are no art or audio asset files: all artwork is drawn procedurally through a typed asset registry (with an optional bundled-PNG override slot), and all sound is synthesized.
 
 ```bash
 npm install
@@ -19,7 +19,8 @@ Build options: `VITE_SIMULATED_STORE=1` turns on the labelled test store and `VI
 - **Shop expansion:** the floor grid physically grows from 3×3 to 12×12 across 10 stages, grouped into five tiers: **Starter Shop, Expanded Shop, Super Shop, Mega Store, Tycoon Flagship**. Each tier raises the walls, adds building details and raises checkout and decoration limits. The Shop panel shows the next expansion's price, requirements, gains and a floor-plan preview.
 - **360° camera:** rotate all the way round, tilt, pan and zoom, with on-screen buttons as well as gestures. See [Controls](#controls).
 - **Goals:** a guided tutorial (skippable, with a How to play screen), main and side goals, **daily and weekly missions**, achievements and milestones.
-- **Premium Shop:** Gems, cosmetic shop themes (Neon Nights, Golden Shelves), staff outfits, seasonal decor and conveniences.
+- **Art:** a "Cute Isometric Diorama" style with chibi customers (six archetypes) and staff (five roles with their own tools), 32 products with fictional brands, terrain that rotates with the camera, and six location sets (Town, City, Beach, Airport, Night Market, Countryside) with buildings, props, traffic and seasonal decor. See [docs/ART.md](docs/ART.md).
+- **Premium Shop:** Gems, five shop themes (Default, Neon Nights, Golden Shelves, Cozy Autumn, Ocean Breeze), six staff outfits, seasonal decor and conveniences.
 - **Optional rewarded ads:** a short sale-price boost, never required. Hidden unless an ad provider exists.
 - **Saves:** versioned with checksum, backup, migrations and repair; unreadable saves are kept aside and the player is told what happened. Offline earnings are capped and collected once.
 - **Accessibility:** text size, colour-blind palette, reduced motion (also follows the OS setting), screen shake and vibration toggles, camera speed.
@@ -59,7 +60,9 @@ src/
               upgrades · progression (XP/levels/reputation) · quests · missions · achievements (+milestones)
               events (rush hour, crates…) · locations · prestige · offline · monetization · ads · debug
   save/       versioned saves: checksum, backup slot, migrations, validation/repair, damaged-save copy
-  render/     renderer, projection + camera controller (iso.ts), shapes, sprites, theme skins, particles
+  assets/     art pipeline: spec, registry, sprite cache, fallback, PNG overrides, procedural art
+              (products, characters, furniture, props, terrain, themes, locations, UI icons)
+  render/     renderer, projection + camera controller (iso.ts), world (terrain/scenery/traffic), shapes, sprites, theme skins, particles
   monetization/ purchase adapters (native bridge, test store), verifier, purchase controller, catalog
   ads/        rewarded-ad provider adapters (none / native bridge / dev simulator) and controller
   audio/      Web Audio synth SFX (categories + pitch variation) and adaptive procedural music
@@ -79,9 +82,9 @@ Key design decisions:
 - **Data-driven content:** adding a product, upgrade, quest, mission, event, location, theme, season or shop tier only needs a data entry (plus locale strings, which a test enforces).
 
 ## Progression at a glance
-Tiny shop → first sale → shelf upgrade → second shelf → new product → checkout upgrade → **expansion** → Drinks department → first hire → achievements & shop themes → missions unlock → Expanded Shop → bakery/café → Super Shop → new locations (Downtown, Beach, Airport, Night Market) → Mega Store → **franchise** (Stars and a permanent +25% revenue) → Head Office perks → Tycoon Flagship → retail empire.
+Tiny shop → first sale → shelf upgrade → second shelf → new product → checkout upgrade → **expansion** → Drinks department → first hire → achievements & shop themes → missions unlock → Expanded Shop → bakery/café → Super Shop → new locations (Downtown, Countryside, Beach, Airport, Night Market) → Mega Store → **franchise** (Stars and a permanent +25% revenue) → Head Office perks → Tycoon Flagship → retail empire.
 
 The first twelve main quests form a contextual tutorial. A bouncing pointer shows the next thing to tap; it can be skipped, and "How to play" in the pause menu explains the basics or turns the tips back on. After the tutorial, side quests and daily/weekly missions rotate in.
 
 ## Testing
-`tests/` covers economy formulas, transactions and edge cases (exact money, £0, overflow, invalid input), XP/levels/reputation, offline earnings (cap, clock rollback), prestige, and save/load (round trip, corrupt-main → backup, tamper detection, migrations, repair). It also has integration tests: a customer completes a purchase, a stocker restocks, a cashier opens a till, expansion updates navigation, an employee is removed mid-task, a full queue, deterministic speed and frame-rate independence, and isolation of a broken NPC. Further suites cover the Premium Shop purchase state machine, cosmetics, missions, rewarded ads, onboarding, analytics consent, save recovery, the camera projection (exactness, inverse, 360° wrap, face visibility, limits) and shop tiers (requirements, caps, single charging, usable new floor). Finally, a **60-minute balance bot** asserts healthy pacing (no 10-minute dead zones).
+`tests/` covers economy formulas, transactions and edge cases (exact money, £0, overflow, invalid input), XP/levels/reputation, offline earnings (cap, clock rollback), prestige, and save/load (round trip, corrupt-main → backup, tamper detection, migrations, repair). It also has integration tests: a customer completes a purchase, a stocker restocks, a cashier opens a till, expansion updates navigation, an employee is removed mid-task, a full queue, deterministic speed and frame-rate independence, and isolation of a broken NPC. Further suites cover the Premium Shop purchase state machine, cosmetics, missions, rewarded ads, onboarding, analytics consent, save recovery, the camera projection (exactness, inverse, 360° wrap, face visibility, limits), shop tiers (requirements, caps, single charging, usable new floor) and the art pipeline (unique valid ids, every drawing inside its declared box, product/role/outfit coverage, furniture footprints matching placement, terrain and scenery clearances, themes and animation not affecting the simulation, save round-trips). Finally, a **60-minute balance bot** asserts healthy pacing (no 10-minute dead zones).

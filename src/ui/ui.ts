@@ -682,7 +682,7 @@ export class UIManager implements AppApi {
       const p = getProduct(id);
       if (!p) continue;
       this.sfx('newProduct');
-      this.popups.push({ id: `prod-${id}`, icon: p.icon, title: t('popup.new_product'), subtitle: t(`product.${id}`), body: t(`product.${id}.desc`), kind: 'celebrate', buttons: [{ label: t('ui.ok'), primary: true }] });
+      this.popups.push({ id: `prod-${id}`, icon: p.icon, art: `product.${id}`, title: t('popup.new_product'), subtitle: t(`product.${id}`), body: t(`product.${id}.desc`), kind: 'celebrate', buttons: [{ label: t('ui.ok'), primary: true }] });
     }
   }
 

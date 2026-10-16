@@ -1,9 +1,13 @@
+import { hasAsset, registerBuiltinAssets } from '../assets';
+import { thumbnail } from '../assets/spriteCache';
 import { el, clear } from './dom';
 import { t } from '../core/i18n';
 
 export interface PopupSpec {
   id?: string;
   icon: string;
+  /** Optional asset id whose thumbnail replaces the emoji icon. */
+  art?: string;
   title: string;
   subtitle?: string;
   body?: Node | string;
@@ -65,7 +69,7 @@ export class Popups {
       'div',
       { class: `modal modal-${p.kind ?? 'info'}`, role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'modal-title' },
       p.kind === 'celebrate' || p.kind === 'gold' ? el('div', { class: 'rays', 'aria-hidden': 'true' }) : null,
-      el('div', { class: 'modal-icon', 'aria-hidden': 'true' }, p.icon),
+      el('div', { class: 'modal-icon', 'aria-hidden': 'true' }, artImage(p.art) ?? p.icon),
       el('h2', { id: 'modal-title' }, p.title),
       p.subtitle ? el('div', { class: 'modal-sub' }, p.subtitle) : null,
       p.body ? el('div', { class: 'modal-body' }, p.body) : null,
@@ -92,4 +96,13 @@ export class Popups {
   static ok(): string {
     return t('ui.ok');
   }
+}
+
+/** <img> of an asset thumbnail, or null when there is no such asset / no canvas. */
+function artImage(id?: string): HTMLElement | null {
+  if (!id) return null;
+  registerBuiltinAssets();
+  if (!hasAsset(id)) return null;
+  const src = thumbnail(id, 96);
+  return src ? el('img', { class: 'modal-art', src, alt: '' }) : null;
 }

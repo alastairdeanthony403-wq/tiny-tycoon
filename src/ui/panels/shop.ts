@@ -1,7 +1,7 @@
 import { Panel } from '../panel';
 import type { AppApi } from '../api';
 import { el, setText, guarded } from '../dom';
-import { UpgradeButton, card, iconBox, sectionTitle, statPreview, tag, ProgressBar } from '../components';
+import { UpgradeButton, card, iconBox, artIcon, sectionTitle, statPreview, tag, ProgressBar } from '../components';
 import { OBJECTS, OBJECT_MAP } from '../../config/objects';
 import { DEPARTMENTS } from '../../config/departments';
 import { THEMES } from '../../config/cosmetics';
@@ -38,7 +38,7 @@ export class ShopPanel extends Panel {
       out.push(sectionTitle(t('shop.pending'), '🎁'));
       g.shop.pendingPlacements.forEach((p, i) => {
         const def = OBJECT_MAP[p.kind];
-        out.push(card('', iconBox(def.icon), el('div', { class: 'card-main' }, el('b', {}, t(`object.${p.kind}`)), el('small', {}, t('shop.pending_desc'))), el('button', { class: 'btn btn-buy affordable', onclick: () => this.app.startPlacement({ kind: p.kind, mode: 'pending', index: i }) }, t('shop.place'))));
+        out.push(card('', artIcon(`furniture.${p.kind}`, def.icon), el('div', { class: 'card-main' }, el('b', {}, t(`object.${p.kind}`)), el('small', {}, t('shop.pending_desc'))), el('button', { class: 'btn btn-buy affordable', onclick: () => this.app.startPlacement({ kind: p.kind, mode: 'pending', index: i }) }, t('shop.place'))));
       });
     }
 
@@ -165,7 +165,7 @@ export class ShopPanel extends Panel {
     const reqs: Node[] = [];
     if (g.state.player.level < def.requiredLevel) reqs.push(tag(`🔒 ${t('reason.level_n', { n: def.requiredLevel })}`, 'locked'));
     if (def.requiredDepartment && !g.shop.departments.includes(def.requiredDepartment)) reqs.push(tag(`🔒 ${t(`dept.${def.requiredDepartment}`)}`, 'locked'));
-    return card(locked ? 'locked-card' : '', iconBox(def.icon), el('div', { class: 'card-main' }, el('b', {}, t(`object.${kind}`), ' ', count), el('small', {}, t(`object.${kind}.desc`)), el('div', { class: 'tags' }, ...info.map((i) => tag(i)), ...reqs)), btn.el);
+    return card(locked ? 'locked-card' : '', artIcon(`furniture.${kind}`, def.icon), el('div', { class: 'card-main' }, el('b', {}, t(`object.${kind}`), ' ', count), el('small', {}, t(`object.${kind}.desc`)), el('div', { class: 'tags' }, ...info.map((i) => tag(i)), ...reqs)), btn.el);
   }
 
   private expansionSection(add: (fn: () => void) => void): Node[] {

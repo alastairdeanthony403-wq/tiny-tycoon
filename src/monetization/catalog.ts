@@ -7,7 +7,10 @@
 export type PremiumProductId =
   | 'cosmetic_neon_nights'
   | 'cosmetic_golden_shelves'
+  | 'cosmetic_cozy_autumn'
+  | 'cosmetic_ocean_breeze'
   | 'bundle_staff_outfits'
+  | 'bundle_outfits_deluxe'
   | 'bundle_seasonal_decorations'
   | 'gems_small'
   | 'gems_medium'
@@ -20,7 +23,7 @@ export type PurchaseType = 'consumable' | 'non_consumable';
 
 export type Grant =
   | { kind: 'gems'; amount: number }
-  | { kind: 'skin'; skin: 'neon_nights' | 'golden_shelves' }
+  | { kind: 'skin'; skin: 'neon_nights' | 'golden_shelves' | 'cozy_autumn' | 'ocean_breeze' }
   | { kind: 'outfits'; outfits: string[] }
   | { kind: 'decor'; objects: string[] }
   | { kind: 'layout_slots'; extra: number }
@@ -83,6 +86,36 @@ export const PREMIUM_CATALOG: PremiumProduct[] = [
     requires: { level: 15, lifetimeRevenue: 25000 },
   },
   {
+    // Shop theme, Gems only. Cosmetic: palettes, signage and falling leaves; no gameplay effects.
+    id: 'cosmetic_cozy_autumn',
+    category: 'cosmetic',
+    featured: false,
+    type: 'non_consumable',
+    storeIds: sid('cosmetic_cozy_autumn'),
+    grant: { kind: 'skin', skin: 'cozy_autumn' },
+    gemPrice: 120,
+    realMoney: false,
+    contents: ['premium.contents.autumn_palette', 'premium.contents.autumn_shelves', 'premium.contents.autumn_leaves'],
+    preview: { kind: 'skin', icon: '🍂', swatch: ['#7f4f24', '#d68c45', '#f4d58d', '#a44a3f'] },
+    ownership: 'once',
+    requires: { level: 8, lifetimeRevenue: 8000 },
+  },
+  {
+    // Shop theme, Gems only. Cosmetic: sea-glass palette, rope trims and drifting bubbles.
+    id: 'cosmetic_ocean_breeze',
+    category: 'cosmetic',
+    featured: false,
+    type: 'non_consumable',
+    storeIds: sid('cosmetic_ocean_breeze'),
+    grant: { kind: 'skin', skin: 'ocean_breeze' },
+    gemPrice: 120,
+    realMoney: false,
+    contents: ['premium.contents.ocean_palette', 'premium.contents.ocean_shelves', 'premium.contents.ocean_bubbles'],
+    preview: { kind: 'skin', icon: '🌊', swatch: ['#e0fbfc', '#48cae4', '#0077b6', '#ffd6a5'] },
+    ownership: 'once',
+    requires: { level: 12, lifetimeRevenue: 40000 },
+  },
+  {
     id: 'bundle_staff_outfits',
     category: 'cosmetic',
     featured: false,
@@ -95,6 +128,21 @@ export const PREMIUM_CATALOG: PremiumProduct[] = [
     contents: ['premium.contents.outfit_smart', 'premium.contents.outfit_diner'],
     preview: { kind: 'outfit', icon: '👔', swatch: ['#1d3557', '#ffd166', '#ff6b9a'] },
     ownership: 'once',
+  },
+  {
+    // Second outfit pack, Gems only.
+    id: 'bundle_outfits_deluxe',
+    category: 'cosmetic',
+    featured: false,
+    type: 'non_consumable',
+    storeIds: sid('bundle_outfits_deluxe'),
+    grant: { kind: 'outfits', outfits: ['barista', 'chef_whites', 'space', 'holiday'] },
+    gemPrice: 250,
+    realMoney: false,
+    contents: ['premium.contents.outfit_barista', 'premium.contents.outfit_chef_whites', 'premium.contents.outfit_space', 'premium.contents.outfit_holiday'],
+    preview: { kind: 'outfit', icon: '🧑‍🚀', swatch: ['#6f4e37', '#ffffff', '#3a86ff', '#d62828'] },
+    ownership: 'once',
+    requires: { level: 6 },
   },
   {
     id: 'bundle_seasonal_decorations',

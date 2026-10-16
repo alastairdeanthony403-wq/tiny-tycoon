@@ -5,7 +5,9 @@ import type { PremiumProduct, PremiumProductId } from '../monetization/catalog';
 import type { Renderer } from '../render/renderer';
 import { el, clear, guarded, toggle, setText } from './dom';
 import { card, tag } from './components';
-import { drawObject, drawPerson } from '../render/sprites';
+import { drawObject } from '../render/sprites';
+import { drawCharacter } from '../assets/art/characters';
+import { staffAppearance } from '../assets/characters';
 import { setView, view } from '../render/iso';
 import { formatNumber, formatMoney } from '../core/format';
 import { getSkin } from '../render/skins';
@@ -310,8 +312,7 @@ export class PremiumShop {
       drawObject(ctx, { uid: 1, kind: 'shelf', x: 0, y: 0, dir: 1, tier: 1, productId: 'crisps', stock: 10, progress: 0 }, info);
       drawObject(ctx, { uid: 2, kind: 'shelf', x: 1, y: 0, dir: 1, tier: 2, productId: 'candy', stock: 10, progress: 0 }, info);
       drawObject(ctx, { uid: 3, kind: 'checkout', x: 2, y: 1, dir: 2, tier: 0, stock: 0, progress: 0 }, info);
-      const u = skin.uniform ?? { body: '#3a86ff', apron: '#3a86ff' };
-      drawPerson(ctx, 0, 60, { body: u.body, apron: u.apron, head: '#e0ac69', hair: '#4a3728', scale: 1.1, hat: 'cap' }, { moving: false, phase: 0, facing: 1 });
+      drawCharacter(ctx, 0, 62, { ...staffAppearance('cashier', 3, null, skin.uniform), scale: 1.15 }, { state: 'idle', t: 0, front: true, right: false });
       ctx.restore();
     } else if (p.grant.kind === 'decor') {
       p.grant.objects.forEach((kind, i) => {
@@ -321,10 +322,12 @@ export class PremiumShop {
         ctx.restore();
       });
     } else {
-      const outfits = { smart: { body: '#1d3557', apron: '#ffd166' }, diner: { body: '#ff6b9a', apron: '#2ec4b6' } } as Record<string, { body: string; apron: string }>;
+      // Each outfit worn by a different staff role, so players can see it keeps the role's props.
+      const roles = ['cashier', 'stocker', 'cleaner', 'manager'];
+      const n = p.grant.outfits.length;
       p.grant.outfits.forEach((o, i) => {
-        const st = outfits[o];
-        drawPerson(ctx, 80 + i * 80, 85, { body: st.body, apron: st.apron, head: '#e0ac69', hair: '#4a3728', scale: 1.8, hat: i ? 'cap' : 'tie' }, { moving: false, phase: 0, facing: 1 });
+        const look = { ...staffAppearance(roles[i % roles.length], i + 1, o), scale: n > 2 ? 1.7 : 2 };
+        drawCharacter(ctx, 240 / (n + 1) * (i + 1), 92, look, { state: 'idle', t: 0, front: true, right: i % 2 === 0 });
       });
     }
     return c;

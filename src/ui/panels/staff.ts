@@ -1,7 +1,7 @@
 import { Panel } from '../panel';
 import type { AppApi } from '../api';
 import { el, setText } from '../dom';
-import { UpgradeButton, card, iconBox, sectionTitle, tag } from '../components';
+import { UpgradeButton, card, artIcon, sectionTitle, tag } from '../components';
 import { STAFF, STAFF_LEVEL_SPEED, STAFF_MAX_LEVEL, TRAIT_MAP } from '../../config/staff';
 import { formatMoney } from '../../core/format';
 import { t } from '../../core/i18n';
@@ -54,7 +54,7 @@ export class StaffPanel extends Panel {
       out.push(
         card(
           locked ? 'locked-card' : '',
-          iconBox(s.icon),
+          artIcon(`staff.${s.id}`, s.icon),
           el(
             'div',
             { class: 'card-main' },
@@ -115,7 +115,7 @@ export class StaffPanel extends Panel {
       out.push(
         card(
           'employee-card',
-          iconBox(STAFF.find((s) => s.id === e.type)!.icon),
+          artIcon(`staff.${e.type}`, STAFF.find((s) => s.id === e.type)!.icon),
           el(
             'div',
             { class: 'card-main' },

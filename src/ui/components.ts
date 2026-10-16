@@ -1,3 +1,5 @@
+import { hasAsset, registerBuiltinAssets } from '../assets';
+import { thumbnail } from '../assets/spriteCache';
 import { el, setText, toggle, pulse, guarded } from './dom';
 import { formatMoney } from '../core/format';
 import { t } from '../core/i18n';
@@ -146,8 +148,21 @@ export function card(cls: string, ...children: (Node | string | null | false)[])
   return el('div', { class: `card ${cls}` }, ...children);
 }
 
-export function iconBox(icon: string, cls = ''): HTMLElement {
+export function iconBox(icon: string | Node, cls = ''): HTMLElement {
   return el('div', { class: `icon-box ${cls}`, 'aria-hidden': 'true' }, icon);
+}
+
+/**
+ * Icon box showing a registered asset's thumbnail (the same art as in the world), falling back to
+ * the emoji when the asset is missing or images can't be produced (e.g. no canvas).
+ */
+export function artIcon(assetId: string, fallback: string, cls = ''): HTMLElement {
+  registerBuiltinAssets();
+  if (hasAsset(assetId)) {
+    const src = thumbnail(assetId, 48);
+    if (src) return iconBox(el('img', { class: 'art-thumb', src, alt: '', draggable: 'false' }), `${cls} has-art`);
+  }
+  return iconBox(fallback, cls);
 }
 
 export function tag(text: string, cls = ''): HTMLElement {

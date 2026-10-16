@@ -18,7 +18,7 @@ export interface ShopSkin {
   /** Staff uniform used when no staff outfit is equipped. */
   uniform?: { body: string; apron: string };
   /** Extra scene treatment drawn by the renderer. */
-  effect: 'neon' | 'golden' | null;
+  effect: 'neon' | 'golden' | 'autumn' | 'ocean' | null;
 }
 
 export const SHOP_SKINS: Record<string, ShopSkin> = {
@@ -39,6 +39,27 @@ export const SHOP_SKINS: Record<string, ShopSkin> = {
     sign: { fill: '#3b2412', border: '#ffd166', text: '#ffd166', glow: 'rgba(255,209,102,0.55)' },
     uniform: { body: '#4a2c17', apron: '#ffd166' },
     effect: 'golden',
+  },
+  cozy_autumn: {
+    id: 'cozy_autumn',
+    // russet, pumpkin, mustard and warm oak
+    palette: { floorA: '#f3e1c7', floorB: '#e8cfaa', wall: '#7f4f24', wallTop: '#d68c45', trim: '#a44a3f' },
+    shelf: { color: '#8c5a2b', trim: '#f4d58d', rim: '#d68c45' },
+    checkout: { color: '#a44a3f', accent: '#f4d58d' },
+    sign: { fill: '#a44a3f', border: '#f4d58d', text: '#fff3d6' },
+    uniform: { body: '#7f4f24', apron: '#d68c45' },
+    effect: 'autumn',
+  },
+  ocean_breeze: {
+    id: 'ocean_breeze',
+    // sea glass, lagoon blue, deep navy and sand
+    palette: { floorA: '#f1fbfc', floorB: '#d8f3f6', wall: '#0077b6', wallTop: '#90e0ef', trim: '#ffd6a5' },
+    shelf: { color: '#e9f5f9', trim: '#48cae4', rim: '#0096c7' },
+    displayTrim: '#48cae4',
+    checkout: { color: '#0096c7', accent: '#ffd6a5' },
+    sign: { fill: '#0077b6', border: '#ffd6a5', text: '#ffffff', glow: 'rgba(72,202,228,0.45)' },
+    uniform: { body: '#0077b6', apron: '#e0fbfc' },
+    effect: 'ocean',
   },
 };
 
