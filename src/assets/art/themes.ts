@@ -1,7 +1,7 @@
 import type { AssetDef } from '../types';
 import { SHOP_SKINS } from '../../render/skins';
 import { THEME_MAP } from '../../config/cosmetics';
-import { LOCATION_SETS } from '../locations';
+import { MAPS } from '../../world/maps';
 import { TERRAIN } from '../terrain';
 import { getAsset } from '../registry';
 import { tone } from '../draw';
@@ -40,7 +40,7 @@ export function themeAssets(): AssetDef[] {
   for (const [id, pal, shelf, trim] of themes) {
     out.push({ id: `theme.${id}`, category: 'theme', size: { w: 48, h: 44 }, anchor: { x: 24, y: 40 }, layer: 'ui', camera: 'billboard', draw: (ctx) => room(ctx, pal, shelf, trim), ref: id });
   }
-  for (const set of Object.values(LOCATION_SETS)) {
+  for (const set of Object.values(MAPS)) {
     out.push({
       id: `location.${set.id}`,
       category: 'location',
@@ -50,7 +50,7 @@ export function themeAssets(): AssetDef[] {
       camera: 'billboard',
       ref: set.id,
       draw: (ctx) => {
-        const t = TERRAIN[set.terrainAt(9, 9, 4)] ?? TERRAIN.grass;
+        const t = TERRAIN[set.base] ?? TERRAIN.grass;
         ctx.beginPath();
         ctx.moveTo(24, 22);
         ctx.lineTo(46, 33);

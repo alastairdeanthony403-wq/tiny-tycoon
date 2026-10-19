@@ -37,6 +37,8 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'big_earner', icon: '🏦', check: 'lifetimeRevenue', target: 100000, stars: 5 },
   { id: 'super_shop', icon: '🛒', check: 'shopTier', target: 2, stars: 3 },
   { id: 'mega_store', icon: '🏢', check: 'shopTier', target: 3, stars: 5 },
+  { id: 'curious', icon: '🔎', check: 'artefactsFound', target: 1, stars: 1 },
+  { id: 'explorer', icon: '🧭', check: 'artefactsFound', target: 8, stars: 4 },
   { id: 'flagship', icon: '👑', check: 'shopTier', target: 4, stars: 10, title: 'flagship' },
   { id: 'packed_aisles', icon: '🗄️', check: 'displayCount', target: 12, stars: 3 },
   { id: 'retail_empire', icon: '👑', check: 'locationsOwned', target: 5, stars: 15, title: 'tycoon' },

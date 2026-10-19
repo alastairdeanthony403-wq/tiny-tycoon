@@ -2,33 +2,31 @@ import { iso, faces, depth, shade, view } from './iso';
 import { box } from './shapes';
 import { drawSprite } from '../assets/spriteCache';
 import { TERRAIN } from '../assets/terrain';
-import { locationSet, seasonalProps, stockroomAnnex, type LocationSet, type Placement } from '../assets/locations';
 import { tone } from '../assets/draw';
 import { textureImage, artVersion, TEXTURE_CELL } from '../assets/images';
+import { mapFor, type MapDef } from '../world/maps';
+import { generateWorld, plotById, plotOrigin, plotRect, artefactPos, type GeneratedWorld, type Placement } from '../world/gen';
 
 /**
- * The world around the shop: terrain painted on the ground plane, buildings and vehicles built
- * from real boxes (so they rotate with the camera), and billboard props from the asset registry.
- * Everything here is visual only.
+ * The world around the shop, drawn from the generated world map (src/world): terrain painted on the
+ * ground plane, buildings and vehicles built from real boxes (so they rotate with the camera), and
+ * billboard props from the asset registry. Everything is in world tiles, shifted so the active shop
+ * plot's origin is the shop's tile (0,0). Visual only: nothing here touches the simulation.
  */
 
 export interface WorldItem {
   x: number;
   y: number;
   draw: () => void;
+  /** Rough on-screen radius in px at zoom 1 (for culling). */
+  r?: number;
 }
 
 interface GroundBake {
   canvas: HTMLCanvasElement;
-  x0: number;
-  y0: number;
   R: number;
   water: [number, number][];
 }
-
-/** Ground extent: the scene runs from −8 to S + 7 on both axes. */
-export const GROUND_MIN = -8;
-export const groundMax = (S: number) => S + 7;
 
 function hash(x: number, y: number, s = 0): number {
   let h = (x * 374761393 + y * 668265263 + s * 2147483647) | 0;
@@ -36,38 +34,30 @@ function hash(x: number, y: number, s = 0): number {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
-/** Terrain id per cell for a set and shop size (exported for tests). */
-export function terrainGrid(set: LocationSet, S: number): string[][] {
-  const out: string[][] = [];
-  for (let cy = GROUND_MIN; cy < groundMax(S); cy++) {
-    const row: string[] = [];
-    for (let cx = GROUND_MIN; cx < groundMax(S); cx++) row.push(set.terrainAt(cx, cy, S));
-    out.push(row);
-  }
-  return out;
-}
+/** Ground canvas resolution: pixels per tile for a world of this size (keeps the bake ≤ 1536 px). */
+export const bakeResolution = (w: number, h: number) => Math.max(12, Math.min(32, Math.floor(1536 / Math.max(w, h))));
 
-function bakeGround(set: LocationSet, S: number): GroundBake | null {
+function bakeGround(world: GeneratedWorld): GroundBake | null {
   if (typeof document === 'undefined') return null;
-  const N = groundMax(S) - GROUND_MIN;
-  const R = Math.max(16, Math.min(32, Math.floor(1024 / N)));
+  const W = world.w;
+  const H = world.h;
+  const R = bakeResolution(W, H);
   const canvas = document.createElement('canvas');
-  canvas.width = N * R;
-  canvas.height = N * R;
+  canvas.width = W * R;
+  canvas.height = H * R;
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
-  const grid = terrainGrid(set, S);
-  const at = (i: number, j: number) => (j >= 0 && j < N && i >= 0 && i < N ? grid[j][i] : null);
+  const at = (i: number, j: number) => (j >= 0 && j < H && i >= 0 && i < W ? world.terrain[j * W + i] : null);
   const water: [number, number][] = [];
-  const ids = [...new Set(grid.flat())].sort((a, b) => (TERRAIN[a]?.z ?? 0) - (TERRAIN[b]?.z ?? 0));
+  const ids = [...new Set(world.terrain)].sort((a, b) => (TERRAIN[a]?.z ?? 0) - (TERRAIN[b]?.z ?? 0));
   for (const id of ids) {
     const t = TERRAIN[id] ?? TERRAIN.grass;
-    for (let j = 0; j < N; j++) {
-      for (let i = 0; i < N; i++) {
-        if (grid[j][i] !== id) continue;
+    const tex = textureImage(id);
+    for (let j = 0; j < H; j++) {
+      for (let i = 0; i < W; i++) {
+        if (world.terrain[j * W + i] !== id) continue;
         const px = i * R;
         const py = j * R;
-        const tex = textureImage(id);
         ctx.fillStyle = t.base;
         ctx.fillRect(px - 0.5, py - 0.5, R + 1, R + 1);
         if (id === 'water') water.push([i, j]);
@@ -127,18 +117,29 @@ function bakeGround(set: LocationSet, S: number): GroundBake | null {
       ctx.stroke();
     }
   }
-  // road centre line
-  ctx.fillStyle = 'rgba(255,255,255,0.75)';
-  const roadI = -3 - GROUND_MIN;
-  for (let j = 0; j < N; j++) if (at(roadI, j) === 'road' && at(roadI - 1, j) === 'road') ctx.fillRect(roadI * R - R * 0.04, j * R + R * 0.2, R * 0.08, R * 0.45);
-  // runway centre line on tarmac far from the shop
-  const rwI = -7 - GROUND_MIN;
-  for (let j = 0; j < N; j++) if (at(rwI, j) === 'tarmac') ctx.fillRect(rwI * R + R * 0.47, j * R + R * 0.1, R * 0.06, R * 0.5);
-  if (set.night) {
+  roadMarkings(ctx, world.map, R, at);
+  if (world.map.night) {
     ctx.fillStyle = 'rgba(16,4,46,0.42)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
-  return { canvas, x0: GROUND_MIN, y0: GROUND_MIN, R, water };
+  return { canvas, R, water };
+}
+
+/** Dashed centre lines on every road and zebra crossings beside each junction. */
+function roadMarkings(ctx: CanvasRenderingContext2D, map: MapDef, R: number, at: (i: number, j: number) => string | null): void {
+  if (map.road !== 'road') return;
+  const inStreet = (y: number) => map.streets.some((s) => y >= s && y < s + 2);
+  const inAvenue = (x: number) => map.avenues.some((a) => x >= a && x < a + 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  for (const a of map.avenues) for (let j = 0; j < map.size.h; j++) if (!inStreet(j) && at(a, j) === 'road') ctx.fillRect((a + 1) * R - R * 0.04, j * R + R * 0.2, R * 0.08, R * 0.45);
+  for (const s of map.streets) for (let i = 0; i < map.size.w; i++) if (!inAvenue(i) && at(i, s) === 'road') ctx.fillRect(i * R + R * 0.2, (s + 1) * R - R * 0.04, R * 0.45, R * 0.08);
+  // zebra crossings on the four arms of each junction
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  for (const a of map.avenues)
+    for (const s of map.streets) {
+      for (const j of [s - 1, s + 2]) for (let k = 0; k < 4; k++) ctx.fillRect(a * R + (k + 0.15) * (R / 2), j * R + R * 0.15, R * 0.3, R * 0.7);
+      for (const i of [a - 1, a + 2]) for (let k = 0; k < 4; k++) ctx.fillRect(i * R + R * 0.15, s * R + (k + 0.15) * (R / 2), R * 0.7, R * 0.3);
+    }
 }
 
 /** Paints a terrain texture file's content: 2×2 cells of base colour and detail (used by the exporter). */
@@ -329,6 +330,61 @@ function drawBuilding(ctx: CanvasRenderingContext2D, b: Extract<Placement, { kin
       box(ctx, x0 - 0.1, y0 - 0.1, x1 + 0.1, y1, 3, b.roof ?? '#6c757d', h);
       break;
     }
+    case 'cafe':
+    case 'storefront': {
+      box(ctx, x0, y0, x1, y1, h, color);
+      for (const s of visible) {
+        const len = Math.hypot(s.bx - s.ax, s.by - s.ay);
+        // big shop window and a door, then a striped awning above them
+        panel(ctx, s, 0.08, 0.62, 3, h * 0.55, winLit, 'rgba(255,255,255,0.9)');
+        panel(ctx, s, 0.7, 0.9, 0, h * 0.55, b.accent === '#ffffff' ? '#6f4518' : b.accent ?? '#6f4518', 'rgba(0,0,0,0.3)');
+        const stripes = Math.max(3, Math.round(len * 2.4));
+        for (let k = 0; k < stripes; k++) panel(ctx, s, k / stripes, (k + 1) / stripes, h * 0.58, h * 0.72, k % 2 ? '#ffffff' : b.roof ?? '#ef476f');
+      }
+      box(ctx, x0 - 0.06, y0 - 0.06, x1 + 0.06, y1 + 0.06, 3, shade(color, -0.12), h);
+      if (b.style === 'cafe') {
+        const c = iso((x0 + x1) / 2, (y0 + y1) / 2, h + 3);
+        ctx.fillStyle = '#6f4518';
+        ctx.beginPath();
+        ctx.ellipse(c.x, c.y - 5, 7, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '900 7px Nunito, system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('☕', c.x, c.y - 5);
+      }
+      break;
+    }
+    case 'subway': {
+      // a low entrance with a dark stairwell, railings and a lit name band
+      box(ctx, x0, y0, x1, y1, 3, '#6c757d');
+      box(ctx, x0 + 0.3, y0 + 0.3, x1 - 0.3, y1 - 0.3, 0.5, '#1b1b2f', 3);
+      for (let k = 1; k < 5; k++) box(ctx, x0 + 0.3, y0 + 0.3 + (k * (y1 - y0 - 0.6)) / 5, x1 - 0.3, y0 + 0.36 + (k * (y1 - y0 - 0.6)) / 5, 0.3, '#495057', 3.5 - k * 0.5, false);
+      for (const [ax, ay, bx, by] of [[x0, y0, x0, y1], [x1, y0, x1, y1], [x0, y0, x1, y0]] as const) {
+        const a = iso(ax, ay, 12);
+        const bb = iso(bx, by, 12);
+        ctx.strokeStyle = b.roof ?? '#4cc9f0';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(bb.x, bb.y);
+        ctx.stroke();
+      }
+      break;
+    }
+    case 'frame': {
+      // an unfinished building: corner posts, two floors of beams and a crane-yellow top
+      const posts: [number, number][] = [[x0, y0], [x1 - 0.2, y0], [x0, y1 - 0.2], [x1 - 0.2, y1 - 0.2]];
+      for (const [px, py] of posts) box(ctx, px, py, px + 0.2, py + 0.2, h, color, 0, false);
+      for (const z of [h * 0.5, h]) {
+        box(ctx, x0, y0, x1, y0 + 0.2, 1.5, b.roof ?? '#ffb703', z - 1.5, false);
+        box(ctx, x0, y1 - 0.2, x1, y1, 1.5, b.roof ?? '#ffb703', z - 1.5, false);
+        box(ctx, x0, y0, x0 + 0.2, y1, 1.5, b.roof ?? '#ffb703', z - 1.5, false);
+        box(ctx, x1 - 0.2, y0, x1, y1, 1.5, b.roof ?? '#ffb703', z - 1.5, false);
+      }
+      break;
+    }
     case 'house': {
       box(ctx, x0, y0, x1, y1, h, color);
       for (const s of visible) {
@@ -474,21 +530,85 @@ function drawPlane(ctx: CanvasRenderingContext2D, x: number, y: number): void {
   }
 }
 
-function drawCar(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, dirY: number): void {
-  const L = 0.62;
+/** A car (or delivery van / taxi) driving along `axis`; `dir` is the direction of travel. */
+function drawCar(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, dir: number, axis: 'x' | 'y' = 'y', kind: { van?: boolean; taxi?: boolean } = {}): void {
+  const L = kind.van ? 0.75 : 0.62;
   const W = 0.3;
-  for (const [wx, wy] of [[-W, -L * 0.6], [W - 0.12, -L * 0.6], [-W, L * 0.6 - 0.2], [W - 0.12, L * 0.6 - 0.2]]) box(ctx, x + wx, y + wy, x + wx + 0.12, y + wy + 0.2, 4, '#2b2d42', 0, false);
-  box(ctx, x - W, y - L, x + W, y + L, 8, color, 3);
-  box(ctx, x - W + 0.05, y - L * 0.45 - dirY * 0.08, x + W - 0.05, y + L * 0.45 - dirY * 0.08, 6, '#caf0f8', 11);
-  box(ctx, x - W + 0.05, y - L * 0.35 - dirY * 0.08, x + W - 0.05, y + L * 0.35 - dirY * 0.08, 1.2, color, 17);
-  const front = sidesOf(x - W, y - L, x + W, y + L).find((s) => s.nx === 0 && s.ny === dirY && faces(0, dirY));
+  const rect = (along0: number, along1: number, across0: number, across1: number) =>
+    axis === 'y' ? [x + across0, y + along0, x + across1, y + along1] : [x + along0, y + across0, x + along1, y + across1];
+  for (const [a0, c0] of [[-L * 0.6, -W], [-L * 0.6, W - 0.12], [L * 0.6 - 0.2, -W], [L * 0.6 - 0.2, W - 0.12]]) {
+    const [rx0, ry0, rx1, ry1] = rect(a0, a0 + 0.2, c0, c0 + 0.12);
+    box(ctx, rx0, ry0, rx1, ry1, 4, '#2b2d42', 0, false);
+  }
+  const [bx0, by0, bx1, by1] = rect(-L, L, -W, W);
+  box(ctx, bx0, by0, bx1, by1, kind.van ? 14 : 8, color, 3);
+  if (kind.van) {
+    const [cx0, cy0, cx1, cy1] = rect(L * 0.45 * dir - 0.18, L * 0.45 * dir + 0.18, -W + 0.04, W - 0.04);
+    box(ctx, Math.min(cx0, cx1), Math.min(cy0, cy1), Math.max(cx0, cx1), Math.max(cy0, cy1), 0.6, '#caf0f8', 14);
+  } else {
+    const [gx0, gy0, gx1, gy1] = rect(-L * 0.45 - dir * 0.08, L * 0.45 - dir * 0.08, -W + 0.05, W - 0.05);
+    box(ctx, gx0, gy0, gx1, gy1, 6, '#caf0f8', 11);
+    const [rx0, ry0, rx1, ry1] = rect(-L * 0.35 - dir * 0.08, L * 0.35 - dir * 0.08, -W + 0.05, W - 0.05);
+    box(ctx, rx0, ry0, rx1, ry1, 1.2, color, 17);
+    if (kind.taxi) {
+      const [tx0, ty0, tx1, ty1] = rect(-0.12, 0.12, -0.08, 0.08);
+      box(ctx, tx0, ty0, tx1, ty1, 2.5, '#2b2d42', 18.2, false);
+    }
+  }
+  const nx = axis === 'x' ? dir : 0;
+  const ny = axis === 'y' ? dir : 0;
+  const front = sidesOf(bx0, by0, bx1, by1).find((s) => s.nx === nx && s.ny === ny && faces(nx, ny));
   if (front) {
     panel(ctx, front, 0.1, 0.3, 6, 9, '#fff3b0');
     panel(ctx, front, 0.7, 0.9, 6, 9, '#fff3b0');
   }
 }
 
-const CAR_COLORS = ['#ef476f', '#3a86ff', '#ffd166', '#06d6a0', '#f8f9fa', '#9d4edd'];
+/** The stockroom annex behind the stockroom door, in shop coordinates (every shop has one). */
+export function stockroomAnnex(): Placement[] {
+  return [
+    { kind: 'building', style: 'stockroom', x0: 0.35, y0: -1.75, x1: 2.65, y1: -0.15, h: 30, color: '#ced4da', roof: '#6c757d', accent: '#ffd166' },
+    { kind: 'prop', id: 'deco.crate_stack', x: 3.2, y: -0.8 },
+  ];
+}
+
+/** Seasonal decorations on free grass and sand spots of the world (world coordinates). */
+export function seasonalPlacements(world: GeneratedWorld, seasons: string[]): Placement[] {
+  const out: Placement[] = [];
+  const spots = world.decorSpots;
+  const take = (n: number, id: string, offset: number) => {
+    for (let i = 0; i < n && i < spots.length; i++) {
+      const sp = spots[(i * 7 + offset) % spots.length];
+      out.push({ kind: 'prop', id, x: sp.x, y: sp.y });
+    }
+  };
+  if (seasons.includes('halloween')) {
+    take(14, 'deco.pumpkin', 0);
+    take(8, 'deco.leaf_pile', 3);
+  }
+  if (seasons.includes('winter')) take(16, 'deco.snow_pile', 1);
+  if (seasons.includes('spring')) take(10, 'deco.flower_bed', 2);
+  if (seasons.includes('summer')) take(6, 'deco.umbrella', 4);
+  return out;
+}
+
+const shift = (p: Placement, ox: number, oy: number): Placement => {
+  switch (p.kind) {
+    case 'building':
+    case 'fence':
+      return { ...p, x0: p.x0 - ox, y0: p.y0 - oy, x1: p.x1 - ox, y1: p.y1 - oy };
+    default:
+      return { ...p, x: p.x - ox, y: p.y - oy };
+  }
+};
+
+export interface WorldView {
+  world: GeneratedWorld;
+  /** World position of the shop's tile (0,0). */
+  origin: { x: number; y: number };
+  /** World bounds in shop coordinates. */
+  bounds: { x0: number; y0: number; x1: number; y1: number };
+}
 
 export class WorldRenderer {
   private bakes = new Map<string, GroundBake | null>();
@@ -497,25 +617,33 @@ export class WorldRenderer {
 
   constructor(private ctx: CanvasRenderingContext2D) {}
 
-  /** Paints the terrain (baked once per location + size) onto the ground plane. */
-  drawGround(locationId: string, S: number, time: number, animate: boolean): void {
-    const set = locationSet(locationId);
-    const key = `${set.id}|${S}`;
+  /** The world map, the active plot's origin and the world bounds in shop coordinates. */
+  view(locationId: string, plotId?: string): WorldView {
+    const map = mapFor(locationId);
+    const world = generateWorld(map);
+    const origin = plotOrigin(map, plotById(map, plotId));
+    return { world, origin, bounds: { x0: -origin.x, y0: -origin.y, x1: map.size.w - origin.x, y1: map.size.h - origin.y } };
+  }
+
+  /** Paints the terrain (baked once per map) onto the ground plane. */
+  drawGround(locationId: string, plotId: string | undefined, time: number, animate: boolean): void {
+    const v = this.view(locationId, plotId);
+    const key = v.world.map.id;
     if (this.bakedVersion !== artVersion()) {
       // texture files finished loading: repaint the ground with them
       this.bakes.clear();
       this.bakedVersion = artVersion();
     }
     if (!this.bakes.has(key)) {
-      if (this.bakes.size > 6) this.bakes.clear();
-      this.bakes.set(key, bakeGround(set, S));
+      if (this.bakes.size > 3) this.bakes.clear();
+      this.bakes.set(key, bakeGround(v.world));
     }
     const bake = this.bakes.get(key);
     if (!bake) return;
     const ctx = this.ctx;
-    const o = iso(bake.x0, bake.y0);
-    const ax = iso(bake.x0 + 1, bake.y0);
-    const by = iso(bake.x0, bake.y0 + 1);
+    const o = iso(-v.origin.x, -v.origin.y);
+    const ax = iso(-v.origin.x + 1, -v.origin.y);
+    const by = iso(-v.origin.x, -v.origin.y + 1);
     const R = bake.R;
     ctx.save();
     ctx.transform((ax.x - o.x) / R, (ax.y - o.y) / R, (by.x - o.x) / R, (by.y - o.y) / R, o.x, o.y);
@@ -525,7 +653,8 @@ export class WorldRenderer {
       ctx.strokeStyle = 'rgba(255,255,255,0.55)';
       ctx.lineWidth = Math.max(1, R * 0.05);
       ctx.beginPath();
-      for (const [i, j] of bake.water.slice(0, 500)) {
+      for (let n = 0; n < bake.water.length; n += Math.max(1, Math.floor(bake.water.length / 600))) {
+        const [i, j] = bake.water[n];
         const ph = time * 1.3 + i * 0.9 + j * 1.7;
         const s = Math.sin(ph);
         if (s < 0.2) continue;
@@ -539,30 +668,42 @@ export class WorldRenderer {
     ctx.restore();
   }
 
-  /** Static placements for a location (cached) plus seasonal decor. */
-  placements(locationId: string, S: number, seasons: string[]): Placement[] {
-    const set = locationSet(locationId);
-    const key = `${set.id}|${S}|${seasons.join(',')}`;
+  /** Static placements in shop coordinates: the map, vacant plots, seasonal decor and the stockroom annex (cached). */
+  placements(locationId: string, plotId: string | undefined, seasons: string[]): Placement[] {
+    const v = this.view(locationId, plotId);
+    const map = v.world.map;
+    const active = plotById(map, plotId);
+    const key = `${map.id}|${active.id}|${seasons.join(',')}`;
     let p = this.layouts.get(key);
     if (!p) {
       if (this.layouts.size > 12) this.layouts.clear();
-      p = [...stockroomAnnex(), ...set.layout(S), ...seasonalProps(seasons, S)];
+      const vacant: Placement[] = [];
+      for (const plot of map.plots) {
+        if (plot.id === active.id) continue;
+        const r = plotRect(map, plot);
+        vacant.push({ kind: 'prop', id: 'deco.sale_sign', x: r.x0 + 1.2, y: r.y0 + 3.5 });
+        vacant.push({ kind: 'fence', x0: r.x0 + 0.4, y0: r.y0 + 2.4, x1: r.x0 + 0.4, y1: r.y1 - 0.4, color: '#ffffff' });
+        vacant.push({ kind: 'prop', id: 'deco.flower_bed', x: r.x0 + 5, y: r.y0 + 8 });
+      }
+      p = [...[...v.world.placements, ...vacant, ...seasonalPlacements(v.world, seasons)].map((x) => shift(x, v.origin.x, v.origin.y)), ...stockroomAnnex()];
       this.layouts.set(key, p);
     }
     return p;
   }
 
-  /** Depth-sortable world items: buildings, fences, props, vehicles. */
-  items(locationId: string, S: number, seasons: string[], time: number, opts: { animate: boolean; lit: boolean }): WorldItem[] {
+  /** Depth-sortable world items: buildings, fences, props, vehicles and artefacts (shop coordinates). */
+  items(locationId: string, plotId: string | undefined, seasons: string[], time: number, opts: { animate: boolean; lit: boolean; found: ReadonlySet<string> }): WorldItem[] {
     const ctx = this.ctx;
-    const set = locationSet(locationId);
-    const lit = opts.lit || !!set.night;
+    const v = this.view(locationId, plotId);
+    const map = v.world.map;
+    const lit = opts.lit || !!map.night;
     const out: WorldItem[] = [];
-    for (const p of this.placements(locationId, S, seasons)) {
+    for (const p of this.placements(locationId, plotId, seasons)) {
       if (p.kind === 'prop') {
-        out.push({ x: p.x, y: p.y, draw: () => this.drawProp(p, lit, time, opts.animate) });
+        out.push({ x: p.x, y: p.y, r: 70, draw: () => this.drawProp(p, lit, time, opts.animate) });
       } else if (p.kind === 'building') {
-        out.push({ x: (p.x0 + p.x1) / 2, y: (p.y0 + p.y1) / 2, draw: () => drawBuilding(ctx, p, lit) });
+        const r = 40 + Math.max(p.x1 - p.x0, p.y1 - p.y0) * 45 + p.h * 1.2;
+        out.push({ x: (p.x0 + p.x1) / 2, y: (p.y0 + p.y1) / 2, r, draw: () => drawBuilding(ctx, p, lit) });
       } else if (p.kind === 'fence') {
         const len = Math.hypot(p.x1 - p.x0, p.y1 - p.y0);
         const n = Math.max(1, Math.round(len));
@@ -571,40 +712,72 @@ export class WorldRenderer {
           const ay = p.y0 + ((p.y1 - p.y0) * k) / n;
           const bx = p.x0 + ((p.x1 - p.x0) * (k + 1)) / n;
           const by = p.y0 + ((p.y1 - p.y0) * (k + 1)) / n;
-          out.push({ x: (ax + bx) / 2, y: (ay + by) / 2, draw: () => drawFence(ctx, ax, ay, bx, by, p.color) });
+          out.push({ x: (ax + bx) / 2, y: (ay + by) / 2, r: 60, draw: () => drawFence(ctx, ax, ay, bx, by, p.color) });
         }
       } else if (p.kind === 'plane') {
-        out.push({ x: p.x, y: p.y, draw: () => drawPlane(ctx, p.x, p.y) });
+        out.push({ x: p.x, y: p.y, r: 320, draw: () => drawPlane(ctx, p.x, p.y) });
+      } else if (p.kind === 'car') {
+        out.push({ x: p.x, y: p.y, r: 60, draw: () => drawCar(ctx, p.x, p.y, p.color, p.dir, p.axis, { van: p.van, taxi: p.taxi }) });
       }
     }
-    // traffic: cars on the road, boats at sea (parked when motion is reduced)
-    const span = S + 15;
-    const t = opts.animate ? time : 0;
-    if (set.traffic === 'cars') {
-      for (let i = 0; i < 4; i++) {
-        const dir = i % 2 ? 1 : -1;
-        const lane = dir > 0 ? -3.5 : -2.5;
-        const raw = (t * (dir > 0 ? 1.7 : 1.4) + i * span * 0.27) % span;
-        const y = dir > 0 ? GROUND_MIN + raw : GROUND_MIN + span - raw;
-        const color = CAR_COLORS[i % CAR_COLORS.length];
-        out.push({ x: lane, y, draw: () => drawCar(ctx, lane, y, color, dir) });
-      }
-    } else if (set.traffic === 'boats') {
-      for (let i = 0; i < 2; i++) {
-        const raw = (t * 0.25 + i * span * 0.5) % span;
-        const y = GROUND_MIN + raw;
-        const x = -6 - i;
-        out.push({
-          x,
-          y,
-          draw: () => {
-            const p = iso(x, y);
-            drawSprite(ctx, 'deco.boat', p.x, p.y + (opts.animate ? Math.sin(time * 2 + i) * 1.5 : 0), { flip: i % 2 === 1 });
-          },
-        });
-      }
+    // discoverable artefacts: a sparkle until found
+    for (const a of map.artefacts) {
+      const w = artefactPos(map, a);
+      const x = w.x - v.origin.x;
+      const y = w.y - v.origin.y;
+      const found = opts.found.has(a.id);
+      out.push({ x, y, r: 70, draw: () => this.drawArtefact(a.asset, x, y, found, time, opts.animate) });
+    }
+    // traffic on every road (parked when motion is reduced)
+    if (map.traffic === 'cars') {
+      const t = opts.animate ? time : 0;
+      const colors = ['#ef476f', '#3a86ff', '#ffd166', '#06d6a0', '#f8f9fa', '#9d4edd'];
+      map.avenues.forEach((av, i) => {
+        for (const dir of [1, -1] as const) {
+          const span = map.size.h;
+          const raw = (t * (dir > 0 ? 1.7 : 1.4) + i * 13 + (dir > 0 ? 0 : span / 2)) % span;
+          const x = av + (dir > 0 ? 0.5 : 1.5) - v.origin.x;
+          const y = (dir > 0 ? raw : span - raw) - v.origin.y;
+          const color = colors[(i * 2 + (dir > 0 ? 0 : 1)) % colors.length];
+          const van = (i + (dir > 0 ? 1 : 0)) % 3 === 0;
+          out.push({ x, y, r: 60, draw: () => drawCar(ctx, x, y, color, dir, 'y', { van }) });
+        }
+      });
+      map.streets.forEach((st, i) => {
+        for (const dir of [1, -1] as const) {
+          const span = map.size.w;
+          const raw = (t * (dir > 0 ? 1.5 : 1.3) + i * 17 + (dir > 0 ? span / 3 : 0)) % span;
+          const y = st + (dir > 0 ? 1.5 : 0.5) - v.origin.y;
+          const x = (dir > 0 ? raw : span - raw) - v.origin.x;
+          const color = colors[(i * 2 + 3 + (dir > 0 ? 0 : 1)) % colors.length];
+          out.push({ x, y, r: 60, draw: () => drawCar(ctx, x, y, color, dir, 'x') });
+        }
+      });
     }
     return out;
+  }
+
+  private drawArtefact(asset: string, x: number, y: number, found: boolean, time: number, animate: boolean): void {
+    const ctx = this.ctx;
+    const pt = iso(x, y);
+    drawSprite(ctx, asset, pt.x, pt.y, { size: 0.9 });
+    if (found) return;
+    // a soft twinkle so curious players can spot it (static under reduced motion)
+    const k = animate ? 0.6 + 0.4 * Math.sin(time * 4 + x) : 1;
+    ctx.save();
+    ctx.globalAlpha = k;
+    ctx.fillStyle = '#fff3b0';
+    for (const [dx, dy, s] of [[-9, -26, 3.2], [8, -18, 2.2], [0, -34, 2.6]]) {
+      ctx.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const rr = i % 2 ? s * 0.35 : s;
+        ctx.lineTo(pt.x + dx + Math.cos(a) * rr, pt.y + dy + Math.sin(a) * rr);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   private drawProp(p: Extract<Placement, { kind: 'prop' }>, lit: boolean, time: number, animate: boolean): void {
@@ -619,7 +792,8 @@ export class WorldRenderer {
       ctx.ellipse(pt.x, pt.y, 36, 36 * view.sinP, 0, 0, Math.PI * 2);
       ctx.fill();
     }
-    drawSprite(ctx, p.id, pt.x, pt.y, { size: p.size ?? 1, flip: p.flip });
+    const bob = p.id === 'deco.boat' && animate ? Math.sin(time * 2 + p.x) * 1.5 : 0;
+    drawSprite(ctx, p.id, pt.x, pt.y + bob, { size: p.size ?? 1, flip: p.flip });
     if (p.glow && lit) {
       const top = pt.y - (p.id === 'deco.runway_light' ? 5 : 52);
       const k = animate ? 0.85 + 0.15 * Math.sin(time * 3 + p.y) : 1;

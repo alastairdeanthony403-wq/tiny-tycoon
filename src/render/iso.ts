@@ -90,6 +90,8 @@ export function unIsoVec(sx: number, sy: number): Pt {
 }
 
 /** Saved / restorable camera pose. */
+export type CameraMode = 'locked' | 'free' | 'returning';
+
 export interface CameraPose {
   yaw: number;
   pitch: number;
@@ -126,8 +128,19 @@ export class Camera {
   vw = 1;
   vh = 1;
   fitZoom = 1;
-  /** Pan limit in tiles (set from the shop size). */
+  /** Pan limit in tiles around the shop centre while Shop Lock is on (set from the shop size). */
   panLimit = 5;
+  /** Free-explore pan range in tiles relative to the shop centre (set from the world bounds). */
+  panBounds = { x0: -5, y0: -5, x1: 5, y1: 5 };
+  /**
+   * Camera focus: 'locked' keeps the shop framed (small pans only), 'free' explores the world,
+   * 'returning' is the short glide back to the shop, after which the camera is locked again.
+   */
+  mode: CameraMode = 'locked';
+  /** Called whenever `mode` changes (HUD toggle, saved preference). */
+  onMode?: (m: CameraMode) => void;
+  /** Tiles a locked pan pushed past the lock limit during the current gesture. */
+  private pushed = 0;
   /** Input sensitivity multiplier (Settings). */
   sensitivity = 1;
   /** Reduced motion: transitions finish almost immediately. */
@@ -164,6 +177,8 @@ export class Camera {
     this.yaw += (this.tyaw - this.yaw) * k;
     this.pitch += (this.tpitch - this.pitch) * k;
     if (Math.abs(this.tyaw - this.yaw) < 0.01) this.yaw = this.tyaw;
+    // the glide home is over once position and zoom have (nearly) arrived
+    if (this.mode === 'returning' && Math.hypot(this.tx - this.x, this.ty - this.y) < 2 && Math.abs(this.tzoom - this.zoom) < 0.01 * this.tzoom) this.setMode('locked');
     this.shake = Math.max(0, this.shake - dt * 2.5);
   }
 
@@ -184,8 +199,48 @@ export class Camera {
     return { x: (wx - this.x) * this.zoom + this.vw / 2, y: (wy - this.y) * this.zoom + this.vh / 2 };
   }
 
+  /** Smallest player zoom: free exploration may pull further back to see more of the world. */
+  get minZoom(): number {
+    return this.mode === 'free' ? CAMERA.freeMinZoom : CAMERA.minZoom;
+  }
+
   zoomBy(f: number): void {
-    this.userZoom = clamp(this.userZoom * f, CAMERA.minZoom, CAMERA.maxZoom);
+    this.userZoom = clamp(this.userZoom * f, this.minZoom, CAMERA.maxZoom);
+  }
+
+  setMode(m: CameraMode): void {
+    if (m === this.mode) return;
+    this.mode = m;
+    if (m !== 'free') {
+      this.userZoom = clamp(this.userZoom, CAMERA.minZoom, CAMERA.maxZoom);
+      this.panX = clamp(this.panX, -this.panLimit, this.panLimit);
+      this.panY = clamp(this.panY, -this.panLimit, this.panLimit);
+    }
+    this.onMode?.(m);
+  }
+
+  /** Shop Lock toggle: on glides back to the shop, off frees the camera where it is. */
+  setLocked(on: boolean): void {
+    if (on) this.returnToShop();
+    else this.setMode('free');
+  }
+
+  get locked(): boolean {
+    return this.mode !== 'free';
+  }
+
+  /** Glide back to frame the whole shop (keeps the viewing angle) and lock onto it. */
+  returnToShop(): void {
+    this.panX = 0;
+    this.panY = 0;
+    this.userZoom = 1;
+    this.pushed = 0;
+    this.setMode(this.reduced ? 'locked' : 'returning');
+  }
+
+  /** Start of a drag gesture: forget how far an earlier gesture pushed against the lock. */
+  beginGesture(): void {
+    this.pushed = 0;
   }
 
   rotateBy(deg: number): void {
@@ -208,9 +263,29 @@ export class Camera {
   /** Pan from a drag in CSS px: the ground moves with the finger, whatever the rotation. */
   pan(dx: number, dy: number): void {
     const g = unIsoVec(-dx / this.zoom, -dy / this.zoom);
-    this.panX = clamp(this.panX + g.x, -this.panLimit, this.panLimit);
-    this.panY = clamp(this.panY + g.y, -this.panLimit, this.panLimit);
+    // panning interrupts the glide home: the camera is simply locked where it is
+    if (this.mode === 'returning') this.setMode('locked');
+    if (this.mode === 'free') {
+      const b = this.panBounds;
+      this.panX = clamp(this.panX + g.x, b.x0, b.x1);
+      this.panY = clamp(this.panY + g.y, b.y0, b.y1);
+      return;
+    }
+    const nx = this.panX + g.x;
+    const ny = this.panY + g.y;
+    this.panX = clamp(nx, -this.panLimit, this.panLimit);
+    this.panY = clamp(ny, -this.panLimit, this.panLimit);
+    // Dragging deliberately past the lock limit switches to Free Explore (if allowed).
+    this.pushed += Math.hypot(nx - this.panX, ny - this.panY);
+    if (this.autoUnlock && this.pushed > CAMERA.unlockPushTiles) {
+      this.setMode('free');
+      this.panX = clamp(nx, this.panBounds.x0, this.panBounds.x1);
+      this.panY = clamp(ny, this.panBounds.y0, this.panBounds.y1);
+    }
   }
+
+  /** Dragging past the lock limit unlocks the camera (Settings). */
+  autoUnlock = true;
 
   /** Frame the whole shop: keep the viewing angle, clear zoom and pan. */
   resetUser(): void {
@@ -221,7 +296,7 @@ export class Camera {
 
   /** Back to the default gameplay camera, rotating the short way round. */
   resetView(): void {
-    this.resetUser();
+    this.returnToShop();
     const turns = Math.round((this.yaw - CAMERA.defaultYaw) / 360);
     this.tyaw = CAMERA.defaultYaw + turns * 360;
     this.tpitch = CAMERA.defaultPitch;
@@ -234,9 +309,11 @@ export class Camera {
   restore(p: CameraPose): void {
     this.yaw = this.tyaw = Number.isFinite(p.yaw) ? p.yaw : CAMERA.defaultYaw;
     this.pitch = this.tpitch = clamp(Number.isFinite(p.pitch) ? p.pitch : CAMERA.defaultPitch, CAMERA.minPitch, CAMERA.maxPitch);
-    this.userZoom = clamp(Number.isFinite(p.zoom) ? p.zoom : 1, CAMERA.minZoom, CAMERA.maxZoom);
-    this.panX = clamp(Number.isFinite(p.panX) ? p.panX : 0, -this.panLimit, this.panLimit);
-    this.panY = clamp(Number.isFinite(p.panY) ? p.panY : 0, -this.panLimit, this.panLimit);
+    this.userZoom = clamp(Number.isFinite(p.zoom) ? p.zoom : 1, this.minZoom, CAMERA.maxZoom);
+    // a saved pan only matters when exploring; a locked camera starts on the shop
+    const b = this.mode === 'free' ? this.panBounds : { x0: -this.panLimit, y0: -this.panLimit, x1: this.panLimit, y1: this.panLimit };
+    this.panX = this.mode === 'free' ? clamp(Number.isFinite(p.panX) ? p.panX : 0, b.x0, b.x1) : 0;
+    this.panY = this.mode === 'free' ? clamp(Number.isFinite(p.panY) ? p.panY : 0, b.y0, b.y1) : 0;
   }
 }
 

@@ -34,6 +34,7 @@ export type PickResult =
   | { type: 'object'; uid: number }
   | { type: 'dirt'; x: number; y: number }
   | { type: 'expansion' }
+  | { type: 'artefact'; id: string }
   | { type: 'tile'; x: number; y: number }
   | null;
 
@@ -173,10 +174,13 @@ export class Renderer {
         P.emit('sparkle', p.x, p.y, 3, { spread: 20, up: 60 });
         this.bounce.set(e.uid, 0.2);
       }),
-      b.on('expansionStarted', () => this.camera.resetUser()),
+      // a locked camera re-frames the growing shop; an exploring one is left where the player put it
+      b.on('expansionStarted', () => this.camera.locked && this.camera.resetUser()),
       b.on('expansionCompleted', () => {
-        this.camera.resetUser();
-        this.camera.zoom *= 0.85; // pull back, then settle
+        if (this.camera.locked) {
+          this.camera.resetUser();
+          this.camera.zoom *= 0.85; // pull back, then settle
+        }
         if (this.shakeAllowed) this.camera.shake = 0.6;
         this.confetti(70);
       }),
@@ -185,7 +189,15 @@ export class Renderer {
       b.on('franchised', () => this.confetti(100)),
       b.on('locationSwitched', () => {
         this.particles.clear();
-        this.camera.resetUser();
+        this.camera.returnToShop();
+      }),
+      b.on('plotChanged', () => this.camera.returnToShop()),
+      b.on('artefactFound', (e) => {
+        const a = this.game.exploration.positions().find((q) => q.def.id === e.id);
+        if (!a) return;
+        const p = at(a.x, a.y, 20);
+        P.emit('sparkle', p.x, p.y, 24, { spread: 40, up: 90 });
+        P.emit('confetti', p.x, p.y, 20, { spread: 50, up: 120 });
       }),
     ];
   }
@@ -389,11 +401,22 @@ export class Renderer {
     return out;
   }
 
+  /** Pan limits: a few tiles around the shop when locked, the whole world map when exploring. */
+  syncCameraBounds(): void {
+    const S = this.frameSize();
+    const cam = this.camera;
+    cam.panLimit = S / 2 + CAMERA.panMarginTiles;
+    // view centre kept a little inside the world's edge
+    const wb = this.world.view(this.game.shop.locationId, this.game.shop.plotId).bounds;
+    const m = CAMERA.worldMarginTiles;
+    cam.panBounds = { x0: wb.x0 + m - S / 2, y0: wb.y0 + m - S / 2, x1: wb.x1 - m - S / 2, y1: wb.y1 - m - S / 2 };
+  }
+
   private updateCamera(dt: number): void {
     const S = this.frameSize();
     const cam = this.camera;
     cam.reduced = this.reducedMotion;
-    cam.panLimit = S / 2 + CAMERA.panMarginTiles;
+    this.syncCameraBounds();
     // Rotate around the shop centre. If the pivot moves (expansion), shift the camera by the same
     // amount so the picture doesn't jump.
     const pivot = { x: S / 2, y: S / 2 };
@@ -417,6 +440,8 @@ export class Renderer {
     cam.frame(minX, minY, maxX, maxY, this.vw, this.vh, this.insets.top, this.insets.bottom, this.insets.right, this.insets.left, fit, isoVec(cam.panX, cam.panY));
     if (this.lastSize === 0 || this.lastLocation !== this.game.shop.locationId) {
       cam.snap();
+      // entering the game (or a new location): a short glide in onto the shop
+      if (!this.reducedMotion) cam.zoom *= 0.72;
       this.lastLocation = this.game.shop.locationId;
     }
     this.lastSize = S;
@@ -471,12 +496,12 @@ export class Renderer {
     ctx.setTransform(z, 0, 0, z, this.dpr * (this.vw / 2 - cam.x * cam.zoom + sh), this.dpr * (this.vh / 2 - cam.y * cam.zoom + sh));
 
     const S = shop.size;
-    this.drawOutsideGround(S, loc);
+    this.drawOutsideGround(loc);
     if (skin === 'neon') this.nightOverlay(S);
     // Outside things (scenery, people on the street) are split into those behind the shop and those
     // between the shop and the camera; the latter are drawn last and faded where they cover the shop.
     const inside: Customer[] = [];
-    const outside: { x: number; y: number; draw: () => void }[] = this.sceneryItems(S, loc, skin === 'neon' || !!loc.theme.night);
+    const outside: { x: number; y: number; draw: () => void }[] = this.sceneryItems(loc, skin === 'neon' || !!loc.theme.night);
     for (const c of g.world.customers) {
       if (c.pos.x < 0) outside.push({ x: c.pos.x, y: c.pos.y, draw: () => this.drawCustomer(c) });
       else inside.push(c);
@@ -511,8 +536,8 @@ export class Renderer {
 
   // ------------------------------------------------------------ outside
 
-  private drawOutsideGround(S: number, loc: (typeof LOCATION_MAP)[string]): void {
-    this.world.drawGround(loc.id, S, this.time, !this.reducedMotion);
+  private drawOutsideGround(loc: (typeof LOCATION_MAP)[string]): void {
+    this.world.drawGround(loc.id, this.game.shop.plotId, this.time, !this.reducedMotion);
     // entrance mat in front of the door (an entrance style recolours it)
     const ent = ENTRANCE_STYLES[this.activeStyles().entrance ?? ''];
     if (ent) {
@@ -522,9 +547,10 @@ export class Renderer {
   }
 
   /** Buildings, props and traffic around the shop, as depth-sortable items. */
-  private sceneryItems(S: number, loc: (typeof LOCATION_MAP)[string], lit: boolean): { x: number; y: number; draw: () => void }[] {
+  private sceneryItems(loc: (typeof LOCATION_MAP)[string], lit: boolean): { x: number; y: number; draw: () => void }[] {
     const seasons = this.game.mods.seasons().map((x) => x.id);
-    const items = this.world.items(loc.id, S, seasons, this.time, { animate: !this.reducedMotion, lit });
+    const found = new Set(this.game.state.exploration.found);
+    const items = this.world.items(loc.id, this.game.shop.plotId, seasons, this.time, { animate: !this.reducedMotion, lit, found }).filter((it) => this.onScreen(it.x, it.y, it.r ?? 80));
     // entrance style: a matching pair of props either side of the door
     const ent = ENTRANCE_STYLES[this.activeStyles().entrance ?? ''];
     if (ent) {
@@ -535,6 +561,16 @@ export class Renderer {
       });
     }
     return items;
+  }
+
+  /** Screen-bounds culling: false when an item of radius r (world px) around ground point (x, y) is off screen. */
+  private onScreen(x: number, y: number, r: number): boolean {
+    const p = iso(x, y);
+    const cam = this.camera;
+    const hw = this.vw / 2 / cam.zoom + r;
+    const hh = this.vh / 2 / cam.zoom + r;
+    // tall things reach up the screen, so allow extra room below the view
+    return p.x > cam.x - hw && p.x < cam.x + hw && p.y > cam.y - hh && p.y < cam.y + hh + r;
   }
 
   /** True when a ground point outside the shop lies between the shop and the camera. */
@@ -1207,6 +1243,12 @@ export class Renderer {
     if (crate) {
       const p = iso(crate.x + 0.5, crate.y + 0.5, 20);
       if (Math.abs(w.x - p.x) < 24 && Math.abs(w.y - p.y) < 30) return { type: 'crate' };
+    }
+    // undiscovered artefacts: tap the little object (or its sparkle) standing on the ground
+    for (const a of g.exploration.positions()) {
+      if (g.exploration.isFound(a.def.id)) continue;
+      const p = iso(a.x, a.y);
+      if (Math.abs(w.x - p.x) < 22 && w.y > p.y - 44 && w.y < p.y + 10) return { type: 'artefact', id: a.def.id };
     }
     // objects: front-most first
     const objs = [...g.shop.objects].sort((a, b) => depth(b.x + 0.5, b.y + 0.5) - depth(a.x + 0.5, a.y + 0.5));

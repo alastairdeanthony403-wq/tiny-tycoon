@@ -9,6 +9,7 @@ import { OBJECT_MAP } from '../config/objects';
 import { PRODUCT_MAP } from '../config/products';
 import { LOCATION_MAP } from '../config/locations';
 import { EXPANSIONS } from '../config/expansions';
+import { MAPS, mapFor } from '../world/maps';
 import { STAFF_MAP, STAFF_MAX_LEVEL, TRAIT_MAP } from '../config/staff';
 
 /** Minimal storage interface (localStorage in the browser, a Map in tests). */
@@ -82,6 +83,9 @@ export const MIGRATIONS: Record<number, Migration> = {
     if (prog && typeof prog.mainQuestIndex === 'number' && prog.mainQuestIndex >= 10) prog.mainQuestIndex += 2;
     return s;
   },
+  // v4 → v5: world maps. Shops keep their progress and get their location's main plot; Shop Lock
+  // starts on; no artefacts found yet (all filled in by validate).
+  4: (s) => s,
 };
 
 export function migrate(raw: any): any {
@@ -180,11 +184,15 @@ export function validate(raw: any, now = Date.now()): GameState {
     cameraSensitivity: num(set.cameraSensitivity, 1, 0.25, 3),
     cameraDrag: set.cameraDrag === 'pan' ? 'pan' : 'orbit',
     rememberCamera: bool(set.rememberCamera, true),
+    cameraLock: bool(set.cameraLock, true),
+    cameraAutoUnlock: bool(set.cameraAutoUnlock, true),
   };
   const cam = obj(r.camera);
   if (r.camera && Number.isFinite(cam.yaw) && Number.isFinite(cam.pitch)) {
     st.camera = { yaw: num(cam.yaw, 0, -1e6, 1e6) % 360, pitch: num(cam.pitch, 30, 20, 60), zoom: num(cam.zoom, 1, 0.5, 3), panX: num(cam.panX, 0, -50, 50), panY: num(cam.panY, 0, -50, 50) };
   }
+  const allArtefacts = new Set(Object.values(MAPS).flatMap((m) => m.artefacts.map((a) => a.id)));
+  st.exploration = { found: [...new Set(arr<string>(obj(r.exploration).found).filter((id) => allArtefacts.has(id)))] };
   const stats = obj(r.stats);
   const ds2 = defaultStats();
   st.stats = { ...ds2 };
@@ -364,6 +372,8 @@ function validateShop(raw: any, id: string) {
     pendingPlacements: arr<any>(s.pendingPlacements).filter((p) => p && OBJECT_MAP[p.kind]).map((p) => ({ kind: p.kind, productId: PRODUCT_MAP[p.productId] ? p.productId : undefined })),
     purchases: Object.fromEntries(Object.entries(obj(s.purchases)).map(([k, v]) => [k, num(v, 0)])),
     hires: Object.fromEntries(Object.entries(obj(s.hires)).map(([k, v]) => [k, num(v, 0)])),
+    // unknown or missing plot → the map's main plot (the shop itself is never touched)
+    plotId: mapFor(id).plots.some((p) => p.id === s.plotId) ? s.plotId : mapFor(id).plots[0].id,
   };
 }
 

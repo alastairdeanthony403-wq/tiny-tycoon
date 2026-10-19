@@ -16,6 +16,7 @@ import { QuestManager } from './quests';
 import { AchievementManager } from './achievements';
 import { EventManager } from './events';
 import { LocationManager } from './locations';
+import { ExplorationManager } from './exploration';
 import { PrestigeManager } from './prestige';
 import { OfflineManager } from './offline';
 import { DebugTools } from './debug';
@@ -58,6 +59,7 @@ export class Game {
   achievements: AchievementManager;
   events: EventManager;
   locations: LocationManager;
+  exploration: ExplorationManager;
   prestige: PrestigeManager;
   offline: OfflineManager;
   debug: DebugTools;
@@ -93,6 +95,7 @@ export class Game {
     this.achievements = new AchievementManager(this);
     this.events = new EventManager(this);
     this.locations = new LocationManager(this);
+    this.exploration = new ExplorationManager(this);
     this.prestige = new PrestigeManager(this);
     this.offline = new OfflineManager(this);
     this.debug = new DebugTools(this);

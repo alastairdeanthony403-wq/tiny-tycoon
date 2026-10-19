@@ -18,9 +18,10 @@ Build options: `VITE_SIMULATED_STORE=1` turns on the labelled test store and `VI
 ## Features
 - **Shop simulation:** customers browse, buy and queue; staff run checkouts, restock and clean; upgrades, departments, locations, events and franchising.
 - **Shop expansion:** the floor grid physically grows from 3×3 to 12×12 across 10 stages, grouped into five tiers: **Starter Shop, Expanded Shop, Super Shop, Mega Store, Tycoon Flagship**. Each tier raises the walls, adds building details and raises checkout and decoration limits. The Shop panel shows the next expansion's price, requirements, gains and a floor-plan preview.
-- **360° camera:** rotate all the way round, tilt, pan and zoom, with on-screen buttons as well as gestures. See [Controls](#controls).
+- **360° camera with Shop Lock:** rotate all the way round, tilt, pan and zoom, with on-screen buttons as well as gestures. The camera focuses on your shop when you enter the game. Turn **Shop Lock** off (or drag far enough) to explore the district, and press **Return to Shop** to glide back. See [Controls](#controls).
+- **A living district around every shop:** each location is a 64×70 to 72×72 tile world map (it was a 27×27 strip at most) with streets, traffic, parks, cafés, offices, a subway, a plaza, beaches, farms and more. Each map has three shop plots to choose from, and hidden artefacts that pay a one-time reward. See [docs/WORLD.md](docs/WORLD.md).
 - **Goals:** a guided tutorial (skippable, with a How to play screen), main and side goals, **daily and weekly missions**, achievements and milestones.
-- **Art:** a "Cute Isometric Diorama" style with chibi customers (six archetypes) and staff (five roles with their own tools), 32 products with fictional brands, terrain that rotates with the camera, and six location sets (Town, City, Beach, Airport, Night Market, Countryside) with buildings, props, traffic and seasonal decor. See [docs/ART.md](docs/ART.md).
+- **Art:** a "Cute Isometric Diorama" style with chibi customers (six archetypes) and staff (five roles with their own tools), 32 products with fictional brands, terrain that rotates with the camera, and seven world maps (Neighbourhood, Downtown, Shopping District, Waterfront, Night Market, Countryside, Airport) with buildings, props, traffic and seasonal decor. See [docs/ART.md](docs/ART.md).
 - **Store:**
   - **Gems** are earned from missions, achievements, milestones, level-ups, shop tiers, franchises, the tutorial and events.
   - **Seven tabs:** Home, Upgrades (7 permanent Gem upgrades plus the cash upgrades), Boosters (timed, counted in play time), Cosmetics (themes, outfits, staff accessories, display, checkout, sign and entrance styles, decorations, event collections), Bundles, Exchange (cash, XP, stock delivery, staff training, expansion permit, offline bonus) and Gems.
@@ -43,12 +44,15 @@ Tap the 💎 balance in the HUD. Gems are earned from achievements, milestones a
 | Rotate and tilt the camera | one-finger drag | left-drag; `Q`/`E` rotate, `T`/`G` (or PgUp/PgDn) tilt |
 | Move the view | two-finger drag | right-drag, or drag with Shift/Ctrl/Alt; arrow keys |
 | Zoom | pinch | wheel; `+` / `−` |
-| Frame the shop | ⋯ → ⛶ | `F` |
-| Reset the camera | 🎯 | `0` / Home, double-click |
+| Return to Shop | 🏪 | `H` (or `F`) |
+| Shop Lock on/off | 🔒 / 🔓 | `L` |
+| Reset the camera | ⋯ → 🎯 | `0` / Home, double-click |
+| Collect a hidden artefact | tap its sparkle | click it |
 
-- On-screen camera buttons sit at the right edge: rotate left/right, 🎯 reset and ⋯ for zoom, tilt, frame and a toggle that makes one-finger drag move the view instead of rotating.
+- On-screen camera buttons sit at the right edge: 🏪 Return to Shop, the 🔒 Shop Lock toggle, rotate left/right, and ⋯ for zoom, tilt, frame, reset and a toggle that makes one-finger drag move the view instead of rotating.
+- With Shop Lock on, the view stays within a few tiles of your shop. Dragging further switches to Free Explore (you can turn that off in Settings) and the lock button turns yellow. Return to Shop always brings you back and turns the lock on again.
 - A drag never counts as a tap, so moving the camera can't select or buy anything. Gestures only start on the shop itself, never on panels or buttons.
-- Settings → Camera: speed, what one-finger drag does, and "Remember camera view".
+- Settings → Camera: speed, what one-finger drag does, Shop Lock, "Dragging away starts Free Explore", and "Remember camera view".
 - Other keys: `1–5` switch tabs, `R` rotates while placing, `Enter` places, `Esc` goes back or opens pause.
 
 ## Architecture
@@ -63,10 +67,11 @@ src/
               game.ts (fixed-timestep orchestrator) · economy · shop (grid/placement/expansion/tiers)
               inventory · customers (AI state machine) · checkout (queues) · employees (worker AI)
               upgrades · progression (XP/levels/reputation) · quests · missions · achievements (+milestones)
-              events (rush hour, crates…) · locations · prestige · offline · monetization · ads · debug
+              events (rush hour, crates…) · locations (+ shop plots) · exploration (artefacts) · prestige · offline · monetization · ads · debug
   save/       versioned saves: checksum, backup slot, migrations, validation/repair, damaged-save copy
   assets/     art pipeline: spec, registry, sprite cache, fallback, PNG overrides, procedural art
               (products, characters, furniture, props, terrain, themes, locations, UI icons)
+  world/      maps.ts (the world map definitions: roads, blocks, plots, artefacts) · gen.ts (deterministic generator + validation)
   render/     renderer, projection + camera controller (iso.ts), world (terrain/scenery/traffic), shapes, sprites, theme skins, particles
   monetization/ purchase adapters (native bridge, test store), verifier, purchase controller, catalog
   ads/        rewarded-ad provider adapters (none / native bridge / dev simulator) and controller
@@ -87,9 +92,9 @@ Key design decisions:
 - **Data-driven content:** adding a product, upgrade, quest, mission, event, location, theme, season or shop tier only needs a data entry (plus locale strings, which a test enforces).
 
 ## Progression at a glance
-Tiny shop → first sale → shelf upgrade → second shelf → new product → checkout upgrade → **expansion** → Drinks department → first hire → achievements & shop themes → missions unlock → Expanded Shop → bakery/café → Super Shop → new locations (Downtown, Countryside, Beach, Airport, Night Market) → Mega Store → **franchise** (Stars and a permanent +25% revenue) → Head Office perks → Tycoon Flagship → retail empire.
+Tiny shop → first sale → shelf upgrade → second shelf → new product → checkout upgrade → **expansion** → Drinks department → first hire → achievements & shop themes → missions unlock → Expanded Shop → bakery/café → Super Shop → new locations (Downtown, Countryside, Waterfront, Shopping District, Airport, Night Market) → Mega Store → **franchise** (Stars and a permanent +25% revenue) → Head Office perks → Tycoon Flagship → retail empire.
 
 The first twelve main quests form a contextual tutorial. A bouncing pointer shows the next thing to tap; it can be skipped, and "How to play" in the pause menu explains the basics or turns the tips back on. After the tutorial, side quests and daily/weekly missions rotate in.
 
 ## Testing
-`tests/` covers economy formulas, transactions and edge cases (exact money, £0, overflow, invalid input), XP/levels/reputation, offline earnings (cap, clock rollback), prestige, and save/load (round trip, corrupt-main → backup, tamper detection, migrations, repair). It also has integration tests: a customer completes a purchase, a stocker restocks, a cashier opens a till, expansion updates navigation, an employee is removed mid-task, a full queue, deterministic speed and frame-rate independence, and isolation of a broken NPC. Further suites cover the Premium Shop purchase state machine, cosmetics, missions, rewarded ads, onboarding, analytics consent, save recovery, the camera projection (exactness, inverse, 360° wrap, face visibility, limits), shop tiers (requirements, caps, single charging, usable new floor) and the art pipeline (unique valid ids, every drawing inside its declared box, product/role/outfit coverage, furniture footprints matching placement, terrain and scenery clearances, themes and animation not affecting the simulation, save round-trips). Finally, a **60-minute balance bot** asserts healthy pacing (no 10-minute dead zones).
+`tests/` covers economy formulas, transactions and edge cases (exact money, £0, overflow, invalid input), XP/levels/reputation, offline earnings (cap, clock rollback), prestige, and save/load (round trip, corrupt-main → backup, tamper detection, migrations, repair). It also has integration tests: a customer completes a purchase, a stocker restocks, a cashier opens a till, expansion updates navigation, an employee is removed mid-task, a full queue, deterministic speed and frame-rate independence, and isolation of a broken NPC. Further suites cover the Premium Shop purchase state machine, cosmetics, missions, rewarded ads, onboarding, analytics consent, save recovery, the camera projection (exactness, inverse, 360° wrap, face visibility, limits), shop tiers (requirements, caps, single charging, usable new floor) and the art pipeline (unique valid ids, every drawing inside its declared box, product/role/outfit coverage, furniture footprints matching placement, terrain and scenery clearances, themes and animation not affecting the simulation, save round-trips). The world suite (`tests/world.test.ts`) checks every map definition, world sizes, landmark coverage, reserved plots, a clear customer street at every plot, deterministic generation, artefact placement, once-only rewards, plot selection, save migration and the camera lock modes. Finally, a **60-minute balance bot** asserts healthy pacing (no 10-minute dead zones).

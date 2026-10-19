@@ -473,10 +473,12 @@ html.reduce-motion *, html.reduce-motion *::before { animation-duration: 0.001s 
 .cam-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .cam-more { display: grid; grid-template-columns: repeat(3, 42px); gap: 6px; background: rgba(255, 253, 247, 0.92); padding: 6px; border-radius: 18px; box-shadow: var(--shadow); }
 .cam-ctrl.hidden-soft { opacity: 0; pointer-events: none; }
+.cam-btn[data-cam="lock"].on { background: var(--accent); color: #fff; }
+.cam-btn[data-cam="lock"]:not(.on) { background: #fff3b0; box-shadow: var(--shadow), 0 0 0 2px #ffb703 inset; }
 @media (max-height: 520px) {
   .cam-ctrl { flex-direction: row-reverse; align-items: flex-end; }
   .cam-btn { width: 38px; height: 38px; }
-  .cam-more { grid-template-columns: repeat(6, 38px); }
+  .cam-more { grid-template-columns: repeat(7, 38px); }
 }
 
 /* Shop expansion section */

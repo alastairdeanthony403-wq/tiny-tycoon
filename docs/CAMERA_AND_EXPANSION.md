@@ -42,13 +42,17 @@ How the scene stays correct from every angle:
 | Rotate & tilt | one-finger drag | left-drag; Q/E rotate, T/G (PgUp/PgDn) tilt | ⟲ ⟳, ⋯ → ⤒ ⤓ |
 | Move the view | two-finger drag | right-drag or Shift/Ctrl/Alt-drag; arrow keys | ⋯ → ✋ makes one-finger drag pan |
 | Zoom | pinch | wheel; + / − | ⋯ → ＋ － |
-| Frame the shop | — | F | ⋯ → ⛶ |
-| Reset view | — | 0 / Home, double-click | 🎯 |
+| Return to Shop (frames the shop, turns Shop Lock on) | — | H or F | 🏪, ⋯ → ⛶ |
+| Shop Lock on / off | — | L | 🔒 / 🔓 |
+| Reset view (also returns to the shop) | — | 0 / Home, double-click | ⋯ → 🎯 |
+
+The camera has three modes, **Shop Locked**, **Free Explore** and **Returning to Shop**. They are
+described in [WORLD.md](WORLD.md#camera-shop-lock-free-explore-return-to-shop).
 
 A drag never counts as a tap, so camera gestures can't select, restock or buy anything. Gestures
 only start on the shop canvas: panels, menus and buttons never move the camera. Settings → Camera:
-speed (slow/normal/fast), what one-finger drag does, and "Remember camera view" (saved with the
-game). Reduced motion makes camera transitions instant.
+speed (slow/normal/fast), what one-finger drag does, Shop Lock, whether dragging away starts Free
+Explore, and "Remember camera view" (all saved with the game). Reduced motion makes camera transitions instant.
 
 ## Physical expansion and shop tiers
 

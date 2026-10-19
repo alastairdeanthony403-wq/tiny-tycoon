@@ -93,9 +93,20 @@ describe('camera controller', () => {
     setView(0, 30, 0, 0);
     c.panLimit = 4;
     c.zoom = 1;
+    c.autoUnlock = false;
     c.pan(-100000, 50000);
     expect(Math.abs(c.panX)).toBeLessThanOrEqual(4);
     expect(Math.abs(c.panY)).toBeLessThanOrEqual(4);
+    expect(c.mode).toBe('locked');
+    // with auto-unlock (the default) the same drag frees the camera, clamped to the world instead
+    c.autoUnlock = true;
+    c.panBounds = { x0: -20, y0: -10, x1: 30, y1: 12 };
+    c.pan(-100000, 50000);
+    expect(c.mode).toBe('free');
+    expect(c.panX).toBeGreaterThanOrEqual(-20);
+    expect(c.panX).toBeLessThanOrEqual(30);
+    expect(c.panY).toBeGreaterThanOrEqual(-10);
+    expect(c.panY).toBeLessThanOrEqual(12);
   });
 
   it('smoothing eases toward targets; reduced motion jumps straight there', () => {
@@ -114,7 +125,15 @@ describe('camera controller', () => {
   it('pose round-trips and bad values are sanitised', () => {
     const c = new Camera();
     c.restore({ yaw: 123, pitch: 999, zoom: 0.01, panX: NaN, panY: 2 });
-    expect([c.yawDeg, c.tpitch, c.userZoom, c.panX, c.panY]).toEqual([123, CAMERA.maxPitch, CAMERA.minZoom, 0, 2]);
+    // Shop Lock on: a saved pan is ignored, the camera starts on the shop
+    expect([c.yawDeg, c.tpitch, c.userZoom, c.panX, c.panY]).toEqual([123, CAMERA.maxPitch, CAMERA.minZoom, 0, 0]);
+    // exploring: the saved pan is restored within the world bounds
+    c.setMode('free');
+    c.panBounds = { x0: -3, y0: -3, x1: 3, y1: 3 };
+    c.restore({ yaw: 0, pitch: 30, zoom: 1, panX: NaN, panY: 2 });
+    expect([c.panX, c.panY]).toEqual([0, 2]);
+    c.restore({ yaw: 0, pitch: 30, zoom: 1, panX: -50, panY: 50 });
+    expect([c.panX, c.panY]).toEqual([-3, 3]);
   });
 });
 

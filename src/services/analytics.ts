@@ -22,6 +22,8 @@ export type AnalyticsEvent =
   | 'shop_expanded'
   | 'employee_hired'
   | 'location_unlocked'
+  | 'plot_changed'
+  | 'artefact_found'
   | 'prestige_completed'
   | 'achievement_completed'
   | 'premium_shop_opened'

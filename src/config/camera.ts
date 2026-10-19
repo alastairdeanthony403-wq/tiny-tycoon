@@ -8,10 +8,16 @@ export const CAMERA = {
   maxPitch: 60,
   /** Player zoom on top of the automatic "fit the shop" zoom. */
   minZoom: 0.5,
+  /** Free Explore may zoom further out to take in more of the world. */
+  freeMinZoom: 0.2,
+  /** Tiles a locked pan must be pushed past the lock limit (in one drag) to switch to Free Explore. */
+  unlockPushTiles: 1.5,
+  /** Free Explore keeps the view centre this many tiles inside the world edge. */
+  worldMarginTiles: 4,
   maxZoom: 3,
   /** Hard cap on the final on-screen scale, so zooming in never becomes unusable. */
   maxAbsoluteZoom: 3.2,
-  /** Pan limit around the shop centre, in tiles beyond half the shop size. */
+  /** Shop Lock pan limit around the shop centre, in tiles beyond half the shop size. */
   panMarginTiles: 3,
   /** Degrees of yaw per CSS pixel of horizontal drag (× sensitivity). */
   dragYawPerPx: 0.4,

@@ -3,6 +3,7 @@ import { EXPANSIONS } from '../config/expansions';
 import { LOCATION_MAP } from '../config/locations';
 import { DEPARTMENT_MAP } from '../config/departments';
 import { MAIN_QUESTS } from '../config/quests';
+import { mapFor } from '../world/maps';
 import type { AdsState, GameState, MissionsState, MonetizationState, PlacedObject, SettingsState, ShopState, Stats, StoreState } from './types';
 import { SAVE_VERSION } from './types';
 
@@ -29,6 +30,8 @@ export function defaultSettings(): SettingsState {
     cameraSensitivity: 1,
     cameraDrag: 'orbit',
     rememberCamera: true,
+    cameraLock: true,
+    cameraAutoUnlock: true,
   };
 }
 
@@ -109,6 +112,7 @@ export function createShop(locationId: string, stageOverride?: number): ShopStat
     pendingPlacements: [],
     purchases: {},
     hires: {},
+    plotId: mapFor(loc.id).plots[0].id,
   };
   // Bigger starting locations come with a fridge for drinks.
   if (shop.departments.includes('drinks')) {
@@ -156,6 +160,7 @@ export function createInitialState(now = Date.now(), seed = Math.floor(Math.rand
     cosmetics: { theme: 'classic', unlockedThemes: ['classic'] },
     monetization: defaultMonetization(),
     store: defaultStore(),
+    exploration: { found: [] },
     settings: defaultSettings(),
     stats: defaultStats(),
     missions: defaultMissions(),
