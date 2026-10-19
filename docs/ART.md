@@ -3,7 +3,7 @@
 Tiny Tycoon's look is a **"Cute Isometric Diorama"**: a small, bright, toy-like world with rounded shapes, soft outlines, top-left lighting, contact shadows and chibi characters. It is seen through the real orthographic 360° camera described in [CAMERA_AND_EXPANSION.md](CAMERA_AND_EXPANSION.md).
 
 > **What exists today:** the game ships **188 real PNG files** in `src/assets/`, and the renderer draws from them:
-> - `images/`: 155 sprites, one per registered asset. These are products, props, people portraits, furniture thumbnails, theme and location previews, terrain swatches and UI icons, at 4× resolution.
+> - `images/`: 154 sprites, one per registered asset. These are products, props, people portraits, furniture thumbnails, theme and location previews, terrain swatches and UI icons, at 4× resolution.
 > - `sheets/`: 46 character sprite sheets (36 customer looks and 10 staff looks) holding every animation frame from the front and the back.
 > - `textures/`: 11 terrain textures.
 > - `manifest.json` lists every file with its size, anchor and frame rectangles.
