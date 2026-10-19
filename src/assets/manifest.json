@@ -1172,6 +1172,294 @@
    "padding": 2
   },
   {
+   "id": "deco.swing_set",
+   "file": "images/deco.swing_set.png",
+   "width": 208,
+   "height": 216,
+   "bytes": 4034,
+   "category": "decoration",
+   "size": {
+    "w": 48,
+    "h": 50
+   },
+   "anchor": {
+    "x": 24,
+    "y": 43
+   },
+   "scale": 4,
+   "padding": 2
+  },
+  {
+   "id": "deco.slide",
+   "file": "images/deco.slide.png",
+   "width": 200,
+   "height": 192,
+   "bytes": 3258,
+   "category": "decoration",
+   "size": {
+    "w": 46,
+    "h": 44
+   },
+   "anchor": {
+    "x": 22,
+    "y": 39
+   },
+   "scale": 4,
+   "padding": 2
+  },
+  {
+   "id": "deco.noticeboard",
+   "file": "images/deco.noticeboard.png",
+   "width": 144,
+   "height": 176,
+   "bytes": 2857,
+   "category": "decoration",
+   "size": {
+    "w": 32,
+    "h": 40
+   },
+   "anchor": {
+    "x": 16,
+    "y": 38
+   },
+   "scale": 4,
+   "padding": 2
+  },
+  {
+   "id": "deco.bike_rack",
+   "file": "images/deco.bike_rack.png",
+   "width": 176,
+   "height": 120,
+   "bytes": 2649,
+   "category": "decoration",
+   "size": {
+    "w": 40,
+    "h": 26
+   },
+   "anchor": {
+    "x": 20,
+    "y": 21
+   },
+   "scale": 4,
+   "padding": 2
+  },
+  {
+   "id": "deco.ad_board",
+   "file": "images/deco.ad_board.png",
+   "width": 168,
+   "height": 216,
+   "bytes": 3609,
+   "category": "decoration",
+   "size": {
+    "w": 38,
+    "h": 50
+   },
+   "anchor": {
+    "x": 19,
+    "y": 48
+   },
+   "scale": 4,
+   "padding": 2
+  },
+  {
+   "id": "deco.subway_sign",
+   "file": "images/deco.subway_sign.png",
+   "width": 120,
+   "height": 224,
+   "bytes": 2753,
+   "category": "decoration",
+   "size": {
+    "w": 26,
+    "h": 52
+   },
+   "anchor": {
+    "x": 13,
+    "y": 50
+   },
+   "scale": 4,
+   "padding": 2
+  },
+  {
+   "id": "deco.taxi_sign",
+   "file": "images/deco.taxi_sign.png",
+   "width": 112,
+   "height": 192,
+   "bytes": 2261,
+   "category": "decoration",
+   "size": {
+    "w": 24,
+    "h": 44
+   },
+   "anchor": {
+    "x": 12,
+    "y": 42
+   },
+   "scale": 4,
+   "padding": 2
+  },
+  {
+   "id": "deco.sale_sign",
+   "file": "images/deco.sale_sign.png",
+   "width": 136,
+   "height": 176,
+   "bytes": 2644,
+   "category": "decoration",
+   "size": {
+    "w": 30,
+    "h": 40
+   },
+   "anchor": {
+    "x": 15,
+    "y": 38
+   },
+   "scale": 4,
+   "padding": 2
+  },
+  {
+   "id": "deco.cafe_table",
+   "file": "images/deco.cafe_table.png",
+   "width": 160,
+   "height": 136,
+   "bytes": 3005,
+   "category": "decoration",
+   "size": {
+    "w": 36,
+    "h": 30
+   },
+   "anchor": {
+    "x": 18,
+    "y": 27
+   },
+   "scale": 4,
+   "padding": 2
+  },
+  {
+   "id": "deco.barrier",
+   "file": "images/deco.barrier.png",
+   "width": 184,
+   "height": 128,
+   "bytes": 2466,
+   "category": "decoration",
+   "size": {
+    "w": 42,
+    "h": 28
+   },
+   "anchor": {
+    "x": 21,
+    "y": 23
+   },
+   "scale": 4,
+   "padding": 2
+  },
+  {
+   "id": "deco.garden_gnome",
+   "file": "images/deco.garden_gnome.png",
+   "width": 112,
+   "height": 152,
+   "bytes": 2716,
+   "category": "decoration",
+   "size": {
+    "w": 24,
+    "h": 34
+   },
+   "anchor": {
+    "x": 12,
+    "y": 32
+   },
+   "scale": 4,
+   "padding": 2
+  },
+  {
+   "id": "deco.golden_cart",
+   "file": "images/deco.golden_cart.png",
+   "width": 176,
+   "height": 152,
+   "bytes": 3273,
+   "category": "decoration",
+   "size": {
+    "w": 40,
+    "h": 34
+   },
+   "anchor": {
+    "x": 20,
+    "y": 31
+   },
+   "scale": 4,
+   "padding": 2
+  },
+  {
+   "id": "deco.lost_parcel",
+   "file": "images/deco.lost_parcel.png",
+   "width": 136,
+   "height": 128,
+   "bytes": 2471,
+   "category": "decoration",
+   "size": {
+    "w": 30,
+    "h": 28
+   },
+   "anchor": {
+    "x": 15,
+    "y": 26
+   },
+   "scale": 4,
+   "padding": 2
+  },
+  {
+   "id": "deco.mini_statue",
+   "file": "images/deco.mini_statue.png",
+   "width": 136,
+   "height": 208,
+   "bytes": 3380,
+   "category": "decoration",
+   "size": {
+    "w": 30,
+    "h": 48
+   },
+   "anchor": {
+    "x": 15,
+    "y": 46
+   },
+   "scale": 4,
+   "padding": 2
+  },
+  {
+   "id": "deco.rare_plant",
+   "file": "images/deco.rare_plant.png",
+   "width": 136,
+   "height": 184,
+   "bytes": 3760,
+   "category": "decoration",
+   "size": {
+    "w": 30,
+    "h": 42
+   },
+   "anchor": {
+    "x": 15,
+    "y": 40
+   },
+   "scale": 4,
+   "padding": 2
+  },
+  {
+   "id": "deco.vintage_sign",
+   "file": "images/deco.vintage_sign.png",
+   "width": 160,
+   "height": 192,
+   "bytes": 3798,
+   "category": "decoration",
+   "size": {
+    "w": 36,
+    "h": 44
+   },
+   "anchor": {
+    "x": 18,
+    "y": 42
+   },
+   "scale": 4,
+   "padding": 2
+  },
+  {
    "id": "terrain.water",
    "file": "images/terrain.water.png",
    "width": 144,
@@ -2396,11 +2684,11 @@
    "padding": 2
   },
   {
-   "id": "location.beach",
-   "file": "images/location.beach.png",
+   "id": "location.shopping",
+   "file": "images/location.shopping.png",
    "width": 208,
    "height": 192,
-   "bytes": 3275,
+   "bytes": 3117,
    "category": "location",
    "size": {
     "w": 48,
@@ -2414,11 +2702,11 @@
    "padding": 2
   },
   {
-   "id": "location.airport",
-   "file": "images/location.airport.png",
+   "id": "location.beach",
+   "file": "images/location.beach.png",
    "width": 208,
    "height": 192,
-   "bytes": 2224,
+   "bytes": 3275,
    "category": "location",
    "size": {
     "w": 48,
@@ -2455,6 +2743,24 @@
    "width": 208,
    "height": 192,
    "bytes": 2975,
+   "category": "location",
+   "size": {
+    "w": 48,
+    "h": 44
+   },
+   "anchor": {
+    "x": 24,
+    "y": 40
+   },
+   "scale": 4,
+   "padding": 2
+  },
+  {
+   "id": "location.airport",
+   "file": "images/location.airport.png",
+   "width": 208,
+   "height": 192,
+   "bytes": 2224,
    "category": "location",
    "size": {
     "w": 48,

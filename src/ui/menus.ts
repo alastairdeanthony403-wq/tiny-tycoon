@@ -173,6 +173,8 @@ export class Menus {
         sectionTitle(t('set.camera'), '🎥'),
         select(t('set.camera_sensitivity'), [[0.5, t('set.slow')], [1, t('set.normal')], [1.6, t('set.fast')]], s.cameraSensitivity, (v) => (s.cameraSensitivity = v)),
         select(t('set.camera_drag'), [['orbit', t('set.camera_drag_orbit')], ['pan', t('set.camera_drag_pan')]], s.cameraDrag, (v) => (s.cameraDrag = v as 'orbit' | 'pan')),
+        toggleRow('cameraLock', t('set.camera_lock')),
+        toggleRow('cameraAutoUnlock', t('set.camera_auto_unlock')),
         toggleRow('rememberCamera', t('set.remember_camera')),
         el('p', { class: 'hint' }, t('set.camera_help')),
         sectionTitle(t('set.graphics'), '🖼️'),

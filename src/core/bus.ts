@@ -46,6 +46,8 @@ export interface GameEvents {
   dirtCleaned: { x: number; y: number };
   locationUnlocked: { id: string };
   locationSwitched: { id: string };
+  plotChanged: { locationId: string; plotId: string };
+  artefactFound: { id: string; gems: number; cash: number };
   franchised: { stars: number; count: number };
   offlineEarnings: { seconds: number; amount: number };
   tapBoost: { uid: number; x: number; y: number };

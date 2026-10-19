@@ -1,7 +1,7 @@
 /** Serializable game state. Runtime-only data (NPC positions etc.) lives in sim/world.ts. */
 import type { StaffType } from '../config/staff';
 
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 export type Dir = 0 | 1 | 2 | 3; // 0:+x 1:+y 2:-x 3:-y
 
@@ -57,6 +57,8 @@ export interface ShopState {
   /** Counts of each object kind ever bought here (drives cost scaling). */
   purchases: Record<string, number>;
   hires: Record<string, number>;
+  /** Plot of the location's world map the shop stands on (see world/maps.ts). */
+  plotId: string;
 }
 
 export interface PlayerState {
@@ -136,6 +138,10 @@ export interface SettingsState {
   cameraDrag: 'orbit' | 'pan';
   /** Restore the last camera angle, zoom and pan when returning. */
   rememberCamera: boolean;
+  /** Shop Lock: keep the camera focused on the shop (off = free exploration of the world). */
+  cameraLock: boolean;
+  /** Dragging past the Shop Lock limit switches to Free Explore. */
+  cameraAutoUnlock: boolean;
 }
 
 /** Last camera view (only used when settings.rememberCamera is on). */
@@ -267,6 +273,8 @@ export interface GameState {
   missions: MissionsState;
   ads: AdsState;
   camera?: CameraState;
+  /** Discovered world artefacts (ids from world/maps.ts). */
+  exploration: { found: string[] };
   settings: SettingsState;
   stats: Stats;
   events: EventsState;

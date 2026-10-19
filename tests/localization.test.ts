@@ -14,6 +14,7 @@ import { MAIN_QUESTS, SIDE_QUEST_TEMPLATES } from '../src/config/quests';
 import { CUSTOMER_TYPES } from '../src/config/customers';
 import { t, registerLocale, setLanguage } from '../src/core/i18n';
 import { PREMIUM_CATALOG } from '../src/monetization/catalog';
+import { MAPS } from '../src/world/maps';
 
 /** Every data-driven entry must have its localization keys (no raw keys shown to players). */
 describe('localization', () => {
@@ -47,6 +48,12 @@ describe('localization', () => {
   for (const p of PREMIUM_CATALOG) {
     need.push(`premium.${p.id}.name`, `premium.${p.id}.desc`, `premium.${p.id}.long`, ...p.contents);
     if (p.grant.kind === 'outfits') for (const o of p.grant.outfits) need.push(`premium.outfit.${o}`);
+  }
+
+  for (const m of Object.values(MAPS)) {
+    for (const p of m.plots) need.push(`plot.${p.id}`);
+    for (const a of m.artefacts) need.push(`artefact.${a.id}.name`, `artefact.${a.id}.desc`);
+    for (const h of m.highlights) need.push(`map.highlight.${h}`);
   }
 
   it('has every data-driven key', () => {

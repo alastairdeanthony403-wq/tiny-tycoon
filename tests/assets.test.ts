@@ -13,8 +13,9 @@ import { SHOP_SKINS } from '../src/render/skins';
 import { TYPE_ARCHETYPES, ARCHETYPES, STAFF_LOOKS, OUTFITS, customerAppearance, staffAppearance } from '../src/assets/characters';
 import { drawCharacter, poseMotion, type PoseState } from '../src/assets/art/characters';
 import { TERRAIN } from '../src/assets/terrain';
-import { LOCATION_ART, LOCATION_SETS, clearOfShop, seasonalProps, stockroomAnnex } from '../src/assets/locations';
-import { terrainGrid, GROUND_MIN, groundMax } from '../src/render/world';
+import { MAPS, LOCATION_MAP_ID } from '../src/world/maps';
+import { generateWorld } from '../src/world/gen';
+import { stockroomAnnex } from '../src/render/world';
 import { EXPANSIONS } from '../src/config/expansions';
 import { FURNITURE_FOOTPRINT } from '../src/assets/art/furniture';
 import { SaveManager, MemoryStore } from '../src/save/saveManager';
@@ -219,47 +220,23 @@ describe('themes are cosmetic only', () => {
 });
 
 describe('terrain and locations', () => {
-  it('every gameplay location has an art set, including Countryside', () => {
-    for (const l of LOCATIONS) expect(LOCATION_SETS[LOCATION_ART[l.id]], l.id).toBeDefined();
-    expect(Object.keys(LOCATION_SETS).sort()).toEqual(['airport', 'beach', 'city', 'countryside', 'night_market', 'town']);
+  it('every gameplay location has a world map and a thumbnail, including Countryside', () => {
+    for (const l of LOCATIONS) {
+      expect(MAPS[LOCATION_MAP_ID[l.id]], l.id).toBeDefined();
+      expect(hasAsset(`location.${LOCATION_MAP_ID[l.id]}`), l.id).toBe(true);
+    }
     expect(LOCATIONS.some((l) => l.id === 'countryside')).toBe(true);
   });
 
-  it('terrain grids use known terrain, keep the walkway dry and cover every terrain family', () => {
+  it('world terrain uses known terrain and covers every terrain family', () => {
     const used = new Set<string>();
-    for (const set of Object.values(LOCATION_SETS)) {
-      for (const S of [3, 7, 12]) {
-        const grid = terrainGrid(set, S);
-        expect(grid.length).toBe(groundMax(S) - GROUND_MIN);
-        for (const row of grid) for (const id of row) {
-          expect(TERRAIN[id], `${set.id}: ${id}`).toBeDefined();
-          used.add(id);
-        }
-        // the pavement customers walk on (x ≈ −0.5) is never water
-        for (let cy = GROUND_MIN; cy < groundMax(S); cy++) expect(set.terrainAt(-1, cy, S), set.id).not.toBe('water');
-      }
-    }
+    for (const map of Object.values(MAPS)) for (const id of generateWorld(map).terrain) used.add(id);
+    for (const id of used) expect(TERRAIN[id], id).toBeDefined();
     for (const id of ['grass', 'pavement', 'road', 'water', 'sand', 'rock']) expect(used.has(id), id).toBe(true);
   });
 
-  it('scenery never blocks the shop, the walking line or the road', () => {
-    for (const set of Object.values(LOCATION_SETS)) {
-      for (const S of [3, 5, 7, 9, 12]) {
-        const placements = [...set.layout(S), ...seasonalProps(['halloween', 'winter', 'spring', 'summer'], S)];
-        for (const p of placements) {
-          const pts = p.kind === 'prop' || p.kind === 'plane' ? [[p.x, p.y]] : [[p.x0, p.y0], [p.x1, p.y1]];
-          for (const [x, y] of pts) {
-            const inShop = x > 0 && x < S && y > 0 && y < S;
-            expect(inShop, `${set.id} ${S} ${JSON.stringify(p)}`).toBe(false);
-            expect(x > -1.2 && x < 0.2 && y > -3 && y < S + 3, `${set.id} ${S} walkway ${JSON.stringify(p)}`).toBe(false);
-            if (set.terrainAt(-3, Math.floor(y), S) === 'road') expect(x > -4 && x < -2.05, `${set.id} ${S} road ${JSON.stringify(p)}`).toBe(false);
-          }
-        }
-      }
-    }
+  it('the stockroom annex stays behind the shop', () => {
     for (const p of stockroomAnnex()) if (p.kind === 'building') expect(p.y1).toBeLessThanOrEqual(0);
-    expect(clearOfShop(2, 2, 5)).toBe(false);
-    expect(clearOfShop(9, 2, 5)).toBe(true);
   });
 });
 

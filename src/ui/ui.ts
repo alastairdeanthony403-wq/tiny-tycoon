@@ -130,6 +130,16 @@ export class UIManager implements AppApi {
     this.tutorial = new Tutorial(this, renderer, this.tutState);
     this.menus = new Menus(this, hooks);
     this.cameraControls = new CameraControls(this, renderer.camera, () => this.hooks.settingsChanged(this.game.state.settings));
+    // The camera owns its mode (a drag can unlock it, Return to Shop locks it); the saved
+    // preference and the HUD toggle follow it.
+    renderer.camera.onMode = () => {
+      const locked = renderer.camera.locked;
+      if (this.game.state.settings.cameraLock !== locked) {
+        this.game.state.settings.cameraLock = locked;
+        this.hooks.settingsChanged(this.game.state.settings);
+      }
+      this.cameraControls.refresh();
+    };
     if (hooks.debugEnabled) this.debug = new DebugPanel(this, { resetSave: hooks.resetSave, store: hooks.store });
     this.popups.onOpenChange = () => {};
     root.append(this.hud.el, this.panelHost, this.inspector.el, this.placementBar, this.premium.previewBarEl, this.cameraControls.el, this.navEl, this.toasts.el, this.tutorial.el, this.premium.el, this.popups.el, this.menus.el);
@@ -240,7 +250,10 @@ export class UIManager implements AppApi {
     this.audio.applyVolumes();
     this.haptics.enabled = s.vibrationEnabled;
     this.notifications.enabled = s.notificationsEnabled;
-    this.renderer.camera.sensitivity = s.cameraSensitivity;
+    const cam = this.renderer.camera;
+    cam.sensitivity = s.cameraSensitivity;
+    cam.autoUnlock = s.cameraAutoUnlock;
+    if (cam.locked !== s.cameraLock) cam.setLocked(s.cameraLock);
     this.cameraControls?.refresh();
   }
 
@@ -367,6 +380,7 @@ export class UIManager implements AppApi {
       }
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now(), type: e.pointerType });
       dragging = false;
+      if (pointers.size === 1) cam.beginGesture();
       if (pointers.size === 2) {
         const [a, b] = [...pointers.values()];
         pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
@@ -462,7 +476,8 @@ export class UIManager implements AppApi {
       else if (e.key === '+' || e.key === '=') cam.zoomBy(CAMERA.zoomStep);
       else if (e.key === '-') cam.zoomBy(1 / CAMERA.zoomStep);
       else if (e.key === '0' || e.key === 'Home') cam.resetView();
-      else if (k === 'f') cam.resetUser();
+      else if (k === 'f' || k === 'h') cam.returnToShop();
+      else if (k === 'l') this.cameraControls.toggleLock();
       else if (e.key.startsWith('Arrow')) {
         const step = 40;
         cam.pan(e.key === 'ArrowLeft' ? step : e.key === 'ArrowRight' ? -step : 0, e.key === 'ArrowUp' ? step : e.key === 'ArrowDown' ? -step : 0);
@@ -515,9 +530,31 @@ export class UIManager implements AppApi {
       case 'expansion':
         this.promptExpansion();
         break;
+      case 'artefact':
+        this.collectArtefact(pick.id);
+        break;
       default:
         this.inspector.close();
     }
+  }
+
+  /** Collects a discovered artefact: reward once (the manager guards it), then a short card. */
+  private collectArtefact(id: string): void {
+    const found = this.game.exploration.discover(id);
+    if (!found) return;
+    this.sfx('coin');
+    this.haptics.vibrate(30);
+    const def = this.game.exploration.here().find((a) => a.id === id);
+    const reward = [found.gems ? `${found.gems} 💎` : '', found.cash ? formatMoney(found.cash) : ''].filter(Boolean).join(' + ');
+    this.popups.push({
+      id: `artefact-${id}`,
+      icon: '🔎',
+      art: def?.asset,
+      title: t('artefact.found_title', { name: t(`artefact.${id}.name`) }),
+      body: `${t(`artefact.${id}.desc`)}${reward ? ` ${t('artefact.reward', { reward })}` : ''}`,
+      kind: 'celebrate',
+      buttons: [{ label: t('ui.ok'), primary: true }],
+    });
   }
 
   private promptExpansion(): void {

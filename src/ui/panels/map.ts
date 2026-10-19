@@ -1,4 +1,4 @@
-import { LOCATION_ART } from '../../assets/locations';
+import { LOCATION_MAP_ID, mapFor } from '../../world/maps';
 import { Panel } from '../panel';
 import type { AppApi } from '../api';
 import { el, setText } from '../dom';
@@ -9,7 +9,7 @@ import { ECONOMY } from '../../config/economy';
 import { formatMoney } from '../../core/format';
 import { t } from '../../core/i18n';
 
-/** Locations, franchising (prestige) and Head Office perks. */
+/** Locations (world maps, shop plots, discoveries), franchising (prestige) and Head Office perks. */
 export class MapPanel extends Panel {
   constructor(private app: AppApi) {
     super('map', t('nav.map'), '🗺️');
@@ -17,7 +17,7 @@ export class MapPanel extends Panel {
 
   protected structureKey(): string {
     const g = this.app.game;
-    return [g.state.progression.unlockedLocations.join(), g.state.player.currentLocation, g.state.player.level, g.progression.repTier(), g.state.player.prestigeCount, JSON.stringify(g.state.perks)].join('|');
+    return [g.state.progression.unlockedLocations.join(), g.state.player.currentLocation, g.shop.plotId, !!g.shop.construction, g.state.exploration.found.length, g.state.player.level, g.progression.repTier(), g.state.player.prestigeCount, JSON.stringify(g.state.perks)].join('|');
   }
 
   protected build(add: (fn: () => void) => void): Node[] {
@@ -28,7 +28,10 @@ export class MapPanel extends Panel {
     for (const l of LOCATIONS) {
       const owned = g.locations.owned(l.id);
       const current = g.state.player.currentLocation === l.id;
+      const map = mapFor(l.id);
       const traits = el('div', { class: 'tags' }, tag(`👣 ×${l.trafficMult}`), tag(`💷 ×${l.spendMult}`), l.special ? tag(t(`loc.special.${l.special}`), 'special') : null);
+      // what the district looks like: landmark highlights, plots and map size
+      const around = el('div', { class: 'tags map-highlights', 'aria-label': t('map.highlights') }, ...map.highlights.slice(0, 4).map((h) => tag(t(`map.highlight.${h}`))), tag(`📐 ${map.size.w}×${map.size.h}`), tag(`🏪 ${map.plots.length} ${t('map.plots').toLowerCase()}`));
       let right: Node;
       if (current) right = tag(`📍 ${t('map.here')}`, 'good');
       else if (owned)
@@ -65,7 +68,50 @@ export class MapPanel extends Panel {
         if (g.progression.repTier() < l.requiredRepTier) reqs.push(tag(`🔒 ${'★'.repeat(l.requiredRepTier)} ${t(`rep.${l.requiredRepTier}`)}`, 'locked'));
         right = el('div', { class: 'col' }, btn.el, ...reqs);
       }
-      out.push(card(`loc-card ${current ? 'current' : ''}`, artIcon(`location.${LOCATION_ART[l.id] ?? 'town'}`, l.icon), el('div', { class: 'card-main' }, el('b', {}, t(`location.${l.id}`)), el('small', {}, t(`location.${l.id}.desc`)), traits), right));
+      out.push(card(`loc-card ${current ? 'current' : ''}`, artIcon(`location.${LOCATION_MAP_ID[l.id] ?? 'town'}`, l.icon), el('div', { class: 'card-main' }, el('b', {}, t(`location.${l.id}`)), el('small', {}, t(`location.${l.id}.desc`)), traits, around), right));
+    }
+
+    // ---- Shop plots of the current location (relocation is explicit and keeps everything)
+    const locId = g.state.player.currentLocation;
+    out.push(sectionTitle(t('map.plots'), '🏪'));
+    for (const p of g.locations.plots(locId)) {
+      const name = t(`plot.${p.def.id}`);
+      let right: Node;
+      if (p.current) right = tag(`📍 ${t('map.plot_here')}`, 'good');
+      else if (p.reason === 'level') right = tag(`🔒 ${t('map.plot_level', { n: p.def.requiredLevel ?? 1 })}`, 'locked');
+      else if (p.reason === 'building') right = tag(t('map.plot_building'), 'locked');
+      else
+        right = el(
+          'button',
+          {
+            class: 'btn btn-buy affordable',
+            'data-plot': p.def.id,
+            onclick: () =>
+              this.app.confirm({
+                icon: '🏪',
+                title: t('map.plot_title', { plot: name }),
+                text: t('map.plot_confirm', { map: t(`location.${locId}`) }),
+                okLabel: t('map.plot_move'),
+                onOk: () => {
+                  if (!g.locations.choosePlot(locId, p.def.id)) return;
+                  this.app.sfx('swoosh');
+                  this.app.toast(t('map.plot_moved', { plot: name }), '🏪', 'good');
+                  this.app.openPanel(null);
+                },
+              }),
+          },
+          t('map.plot_move'),
+        );
+      out.push(card(`plot-card ${p.current ? 'current' : ''}`, iconBox(p.current ? '📍' : '🏷️'), el('div', { class: 'card-main' }, el('b', {}, name), el('small', {}, t(`location.${locId}`))), right));
+    }
+
+    // ---- Discoveries (artefacts hidden around this location's map)
+    const prog = g.exploration.progress();
+    out.push(sectionTitle(t('map.discoveries'), '🔎'));
+    out.push(el('p', { class: 'hint' }, `${t('map.discoveries_hint')} ${t('map.discovered', { found: prog.found, total: prog.total })}`));
+    for (const a of g.exploration.here()) {
+      const found = g.exploration.isFound(a.id);
+      out.push(card(`artefact-card ${found ? 'found' : ''}`, found ? artIcon(a.asset, '🔎') : iconBox('❔'), el('div', { class: 'card-main' }, el('b', {}, found ? t(`artefact.${a.id}.name`) : '???'), el('small', {}, found ? t(`artefact.${a.id}.desc`) : t('map.undiscovered'))), found ? tag('✓', 'good') : null));
     }
 
     // ---- Franchise / prestige

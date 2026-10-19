@@ -77,7 +77,7 @@ function createStoreBackend(): { adapter: PurchaseAdapter; verifier: PurchaseVer
 }
 
 /** Events after which we save soon (purchases & important progression). */
-const SAVE_TRIGGERS: (keyof GameEvents)[] = ['missionClaimed', 'missionsReset', 'tutorialCompleted', 'adBoostStarted', 'gemsChanged', 'premiumGranted', 'premiumRevoked', 'upgradePurchased', 'objectPlaced', 'objectUpgraded', 'objectRemoved', 'levelUp', 'productUnlocked', 'departmentUnlocked', 'expansionStarted', 'expansionCompleted', 'employeeHired', 'employeeFired', 'employeeLeveled', 'questClaimed', 'achievementClaimed', 'locationUnlocked', 'locationSwitched', 'franchised', 'offlineEarnings', 'crateCollected', 'milestone'];
+const SAVE_TRIGGERS: (keyof GameEvents)[] = ['missionClaimed', 'missionsReset', 'tutorialCompleted', 'adBoostStarted', 'gemsChanged', 'premiumGranted', 'premiumRevoked', 'upgradePurchased', 'objectPlaced', 'objectUpgraded', 'objectRemoved', 'levelUp', 'productUnlocked', 'departmentUnlocked', 'expansionStarted', 'expansionCompleted', 'employeeHired', 'employeeFired', 'employeeLeveled', 'questClaimed', 'achievementClaimed', 'locationUnlocked', 'locationSwitched', 'plotChanged', 'artefactFound', 'franchised', 'offlineEarnings', 'crateCollected', 'milestone'];
 
 function safeStorage(): KeyValueStore {
   try {
@@ -211,8 +211,15 @@ class App {
 
   private restoreCamera(): void {
     const st = this.game.state;
-    if (st.settings.rememberCamera && st.camera) this.renderer.camera.restore(st.camera);
-    else this.renderer.camera.resetView();
+    const cam = this.renderer.camera;
+    // the saved Shop Lock preference decides whether a saved pan is used (exploring) or not
+    this.renderer.syncCameraBounds();
+    cam.setMode(st.settings.cameraLock ? 'locked' : 'free');
+    if (st.settings.rememberCamera && st.camera) cam.restore(st.camera);
+    else {
+      cam.resetView();
+      cam.setMode(st.settings.cameraLock ? 'locked' : 'free');
+    }
   }
 
   private makeGame(state = createInitialState()): Game {

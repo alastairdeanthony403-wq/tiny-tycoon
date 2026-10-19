@@ -1,6 +1,7 @@
 import type { Game } from './game';
 import { LOCATIONS, LOCATION_MAP } from '../config/locations';
 import { createShop } from '../core/state';
+import { mapFor, type PlotDef } from '../world/maps';
 
 /** LocationManager: unlocking and switching between shops. Inactive shops earn passively. */
 export class LocationManager {
@@ -47,6 +48,41 @@ export class LocationManager {
     g.rebuildWorld();
     g.shopMgr.autoPlacePending();
     g.bus.emit('locationSwitched', { id });
+    return true;
+  }
+
+  // ---------------------------------------------------------------- plots
+
+  /** Shop plots of a location's map, with whether the player may move there. */
+  plots(id: string): { def: PlotDef; current: boolean; ok: boolean; reason?: string }[] {
+    const shop = this.game.state.shops[id];
+    return mapFor(id).plots.map((def, i) => {
+      const current = shop ? shop.plotId === def.id : i === 0;
+      const c = this.canChoosePlot(id, def.id);
+      return { def, current, ok: c.ok, reason: c.reason };
+    });
+  }
+
+  canChoosePlot(locationId: string, plotId: string): { ok: boolean; reason?: string } {
+    const shop = this.game.state.shops[locationId];
+    const plot = mapFor(locationId).plots.find((p) => p.id === plotId);
+    if (!plot || !LOCATION_MAP[locationId]) return { ok: false, reason: 'unknown' };
+    if (!shop || !this.owned(locationId)) return { ok: false, reason: 'not_owned' };
+    if (shop.plotId === plotId) return { ok: false, reason: 'current' };
+    if (shop.construction) return { ok: false, reason: 'building' };
+    if (this.game.state.player.level < (plot.requiredLevel ?? 1)) return { ok: false, reason: 'level' };
+    return { ok: true };
+  }
+
+  /**
+   * Moves a shop to another plot of its map. Only the surroundings change: the shop keeps its
+   * size, layout, stock, staff and progress. The UI asks for confirmation first.
+   */
+  choosePlot(locationId: string, plotId: string): boolean {
+    if (!this.canChoosePlot(locationId, plotId).ok) return false;
+    this.game.state.shops[locationId].plotId = plotId;
+    this.game.bus.emit('plotChanged', { locationId, plotId });
+    this.game.analytics('plot_changed', { location: locationId, plot: plotId });
     return true;
   }
 
